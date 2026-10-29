@@ -1,0 +1,14 @@
+[workspace]
+members = ["acurast-iroh", "acurast-iroh-ffi"]
+resolver = "2"
+
+[workspace.package]
+authors = ["Papers AG"]
+repository = "https://gitlab.papers.tech/papers/acurast/acurast-iroh"
+version = "0.1.0"
+edition = "2024"
+
+[workspace.dependencies]
+acurast-iroh = { path = "acurast-iroh" }
+iroh = "=1.2.0"
+uniffi = "0.29.4"

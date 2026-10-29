@@ -1,0 +1,10 @@
+[package]
+name = "acurast-iroh"
+description = "Processor side of the Acurast P2P layer, built on iroh"
+authors = { workspace = true }
+repository = { workspace = true }
+version = { workspace = true }
+edition = { workspace = true }
+
+[dependencies]
+iroh = { workspace = true }

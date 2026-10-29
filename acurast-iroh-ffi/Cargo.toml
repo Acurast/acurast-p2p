@@ -1,0 +1,20 @@
+[package]
+name = "acurast-iroh-ffi"
+description = "uniffi bindings of acurast-iroh for Kotlin and Swift"
+authors = { workspace = true }
+repository = { workspace = true }
+version = { workspace = true }
+edition = { workspace = true }
+
+[lib]
+name = "acurast_iroh_ffi"
+crate-type = ["cdylib", "staticlib", "lib"]
+
+[dependencies]
+acurast-iroh = { workspace = true }
+uniffi = { workspace = true, features = ["tokio"] }
+
+[[bin]]
+name = "uniffi-bindgen"
+path = "bin/uniffi-bindgen.rs"
+required-features = ["uniffi/cli"]
