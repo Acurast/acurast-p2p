@@ -25,3 +25,27 @@ cargo build -p acurast-iroh-ffi
 cargo run -p acurast-iroh-ffi --features uniffi/cli --bin uniffi-bindgen -- \
   generate --library target/debug/libacurast_iroh_ffi.dylib --language kotlin --out-dir target/bindings
 ```
+
+## Packages for the apps
+
+| platform | command | output |
+|---|---|---|
+| iOS | `make ios` (needs [`cargo-swift`](https://github.com/antoniusnaumann/cargo-swift) 0.9.0: `make install-cargo-swift`) | Swift package `AcurastIroh/` with `AcurastIrohFFI.xcframework` (not committed), added to the app as a local package like `AcurastSDK` |
+| Android | `make android` (NDK 29.0.14206865, JDK 17; `android/local.properties` with `sdk.dir`) | `android/lib/build/outputs/aar/lib-release.aar`, published as `com.acurast:acurast-iroh` (`./gradlew :lib:publishToMavenLocal` locally) |
+
+`libc` is pinned to 0.2.186 in `Cargo.lock`: later versions no longer define `in6_ifreq` on iOS,
+which `netdev` (via iroh) needs. The iOS minimum is 13.0, as for `AcurastSDK`.
+
+## Try it against a relay
+
+`p2p-echo` reaches one endpoint from another through a relay, knowing only its `EndpointId`. The
+Acurast relays admit only endpoints registered on chain, so register both keys first (or allowlist
+them on the node with `--p2p-relay-allow`). The local network with a relay node is described in
+`acurast-substrate/zombienet/README.md`.
+
+```sh
+cargo run -p acurast-iroh --example p2p-echo -- listen http://127.0.0.1:3340 --secret <hex>
+cargo run -p acurast-iroh --example p2p-echo -- dial http://127.0.0.1:3340 <endpoint-id> --secret <hex>
+```
+
+Each run prints its secret and endpoint id; without `--secret` a new key is generated.

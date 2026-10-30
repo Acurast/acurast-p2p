@@ -12,7 +12,14 @@ crate-type = ["cdylib", "staticlib", "lib"]
 
 [dependencies]
 acurast-iroh = { workspace = true }
+async-trait = { workspace = true }
+hex = "0.4"
+thiserror = { workspace = true }
 uniffi = { workspace = true, features = ["tokio"] }
+
+[dev-dependencies]
+parity-scale-codec = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 
 [[bin]]
 name = "uniffi-bindgen"

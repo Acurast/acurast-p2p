@@ -7,4 +7,16 @@ version = { workspace = true }
 edition = { workspace = true }
 
 [dependencies]
+acurast-p2p-proto = { workspace = true }
+async-trait = { workspace = true }
+parity-scale-codec = { workspace = true }
 iroh = { workspace = true }
+iroh-relay = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+
+[dev-dependencies]
+async-trait = { workspace = true }
+hex = "0.4"
+iroh-relay = { workspace = true, features = ["server"] }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "test-util"] }

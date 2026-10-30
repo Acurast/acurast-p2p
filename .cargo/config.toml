@@ -1,0 +1,3 @@
+# Fetch git dependencies (acurast-substrate on GitLab) with the git CLI, so its credentials apply.
+[net]
+git-fetch-with-cli = true

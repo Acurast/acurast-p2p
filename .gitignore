@@ -1,1 +1,7 @@
 /target
+# Intermediate output of cargo-swift
+/acurast-iroh-ffi/generated
+# Swift package built by `make ios`, published by CI
+/AcurastIroh
+.DS_Store
+.swiftpm
