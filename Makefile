@@ -8,10 +8,10 @@ install-cargo-swift:
 ensure-ios-targets:
 	rustup target add $(IOS_RUST_TARGETS)
 
-# Swift package AcurastIroh (xcframework AcurastIrohFFI + Swift bindings) at the repo root.
+# Swift package AcurastP2P (xcframework AcurastP2PFFI + Swift bindings) at the repo root.
 ios: ensure-ios-targets
-	cd acurast-iroh-ffi && cargo swift package --platforms ios --name AcurastIroh --xcframework-name AcurastIrohFFI --release --accept-all
-	rm -rf AcurastIroh && mv acurast-iroh-ffi/AcurastIroh AcurastIroh
+	cd acurast-p2p-ffi && cargo swift package --platforms ios --name AcurastP2P --xcframework-name AcurastP2PFFI --release --accept-all
+	rm -rf AcurastP2P && mv acurast-p2p-ffi/AcurastP2P AcurastP2P
 
 # Android library (AAR) in android/lib/build/outputs/aar.
 android:

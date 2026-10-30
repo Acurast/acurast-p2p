@@ -3,8 +3,8 @@ include:
     file: "/.base-gitlab-ci.yml"
 
 variables:
-  ANDROID_IMAGE: acurast-iroh-android:$CI_COMMIT_SHA
-  ANDROID_CONTAINER: acurast-iroh-android-$CI_PIPELINE_ID
+  ANDROID_IMAGE: acurast-p2p-android:$CI_COMMIT_SHA
+  ANDROID_CONTAINER: acurast-p2p-android-$CI_PIPELINE_ID
 
 # fmt, clippy and the Rust tests (host).
 test:
@@ -25,12 +25,12 @@ build:android:
     - docker build -f ci/android.Dockerfile -t $ANDROID_IMAGE .
     - docker run --name $ANDROID_CONTAINER -e CI_JOB_TOKEN $ANDROID_IMAGE
       sh -c "./ci/git-auth.sh && make android"
-    - docker cp $ANDROID_CONTAINER:/app/android/lib/build/outputs/aar/lib-release.aar acurast-iroh-$CI_COMMIT_SHORT_SHA.aar
+    - docker cp $ANDROID_CONTAINER:/app/android/lib/build/outputs/aar/lib-release.aar acurast-p2p-$CI_COMMIT_SHORT_SHA.aar
   after_script:
     - docker rm -f $ANDROID_CONTAINER || true
   artifacts:
     paths:
-      - acurast-iroh-$CI_COMMIT_SHORT_SHA.aar
+      - acurast-p2p-$CI_COMMIT_SHORT_SHA.aar
 
 # Swift package with the xcframework, built on the macOS runner like AcurastSDK.
 build:ios:
@@ -41,11 +41,11 @@ build:ios:
     - make ios
   artifacts:
     paths:
-      - AcurastIroh
+      - AcurastP2P
   tags:
     - ios
 
-# Publishes the AAR to this project's Maven registry as com.acurast:acurast-iroh:<tag without v>.
+# Publishes the AAR to this project's Maven registry as com.acurast:acurast-p2p:<tag without v>.
 publish:android:
   stage: publish
   rules:

@@ -1,15 +1,15 @@
 [workspace]
-members = ["acurast-iroh", "acurast-iroh-ffi"]
+members = ["acurast-p2p", "acurast-p2p-ffi"]
 resolver = "2"
 
 [workspace.package]
 authors = ["Papers AG"]
-repository = "https://gitlab.papers.tech/papers/acurast/acurast-iroh"
+repository = "https://gitlab.papers.tech/papers/acurast/acurast-p2p"
 version = "0.1.0"
 edition = "2024"
 
 [workspace.dependencies]
-acurast-iroh = { path = "acurast-iroh" }
+acurast-p2p = { path = "acurast-p2p" }
 # Protocol definitions shared with the chain and the relays. Pinned to the commit with the P2P
 # pallet until it is merged into develop.
 acurast-p2p-proto = { git = "https://gitlab.papers.tech/papers/acurast/acurast-substrate.git", rev = "a4e03a8cd2a1444776ef76e0393f912275b3cc3f" }

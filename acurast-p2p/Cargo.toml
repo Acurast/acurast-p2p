@@ -1,5 +1,5 @@
 [package]
-name = "acurast-iroh"
+name = "acurast-p2p"
 description = "Processor side of the Acurast P2P layer, built on iroh"
 authors = { workspace = true }
 repository = { workspace = true }

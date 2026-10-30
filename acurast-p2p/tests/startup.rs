@@ -2,7 +2,7 @@
 
 use std::sync::Mutex;
 
-use acurast_iroh::{
+use acurast_p2p::{
     Error, Registration, SecretKey,
     platform::{Chain, KeyStore, PlatformError},
 };
@@ -95,7 +95,7 @@ async fn first_start_creates_and_registers_the_key() {
         .unwrap()
         .push("https://relay.example.com");
 
-    let (endpoint, registration) = acurast_iroh::start(&store, &chain, vec![]).await.unwrap();
+    let (endpoint, registration) = acurast_p2p::start(&store, &chain, vec![]).await.unwrap();
 
     assert_eq!(registration, Registration::Registered);
     let seed: [u8; 32] = store.0.lock().unwrap().clone().unwrap().try_into().unwrap();
@@ -119,11 +119,11 @@ async fn first_start_creates_and_registers_the_key() {
 async fn restart_keeps_the_key_and_does_not_register_again() {
     let store = MemoryKeyStore::default();
     let chain = MockChain::default();
-    let (first, _) = acurast_iroh::start(&store, &chain, vec![]).await.unwrap();
+    let (first, _) = acurast_p2p::start(&store, &chain, vec![]).await.unwrap();
     let id = first.id();
     first.close().await;
 
-    let (second, registration) = acurast_iroh::start(&store, &chain, vec![]).await.unwrap();
+    let (second, registration) = acurast_p2p::start(&store, &chain, vec![]).await.unwrap();
 
     assert_eq!(registration, Registration::AlreadyRegistered);
     assert_eq!(second.id(), id);
@@ -138,7 +138,7 @@ async fn new_key_replaces_the_registered_one() {
     let chain = MockChain::default();
     chain.endpoints.lock().unwrap().push([3; 32]);
 
-    let (endpoint, registration) = acurast_iroh::start(&store, &chain, vec![]).await.unwrap();
+    let (endpoint, registration) = acurast_p2p::start(&store, &chain, vec![]).await.unwrap();
 
     assert_eq!(registration, Registration::Registered);
     assert_eq!(
@@ -153,7 +153,7 @@ async fn invalid_stored_seed_is_an_error() {
     let store = MemoryKeyStore(Mutex::new(Some(vec![1; 31])));
     let chain = MockChain::default();
 
-    let result = acurast_iroh::start(&store, &chain, vec![]).await;
+    let result = acurast_p2p::start(&store, &chain, vec![]).await;
 
     assert!(matches!(result, Err(Error::InvalidSeed)));
 }
@@ -166,7 +166,7 @@ async fn failed_registration_is_reported() {
         ..Default::default()
     };
 
-    let result = acurast_iroh::start(&store, &chain, vec![]).await;
+    let result = acurast_p2p::start(&store, &chain, vec![]).await;
 
     assert!(
         matches!(result, Err(Error::Platform(PlatformError(e))) if e == "insufficient balance")
@@ -184,7 +184,7 @@ async fn relays_follow_the_chain() {
         .lock()
         .unwrap()
         .push("https://a.example.com");
-    let (endpoint, _) = acurast_iroh::start(&store, &chain, vec![]).await.unwrap();
+    let (endpoint, _) = acurast_p2p::start(&store, &chain, vec![]).await.unwrap();
 
     assert!(
         !endpoint.refresh_relays(&chain).await.unwrap(),

@@ -4,13 +4,13 @@
 //! both keys first. Each run prints its secret and endpoint id; pass `--secret` to reuse a key.
 //!
 //! ```text
-//! cargo run -p acurast-iroh --example p2p-echo -- listen http://127.0.0.1:3340 [--secret <hex>]
-//! cargo run -p acurast-iroh --example p2p-echo -- dial http://127.0.0.1:3340 <endpoint-id> [--secret <hex>]
+//! cargo run -p acurast-p2p --example p2p-echo -- listen http://127.0.0.1:3340 [--secret <hex>]
+//! cargo run -p acurast-p2p --example p2p-echo -- dial http://127.0.0.1:3340 <endpoint-id> [--secret <hex>]
 //! ```
 
 use std::time::Duration;
 
-use acurast_iroh::{EndpointAddr, EndpointId, P2pEndpoint, Relay, SecretKey};
+use acurast_p2p::{EndpointAddr, EndpointId, P2pEndpoint, Relay, SecretKey};
 
 const ALPN: &[u8] = b"acurast/example/echo";
 const TIMEOUT: Duration = Duration::from_secs(20);
@@ -77,7 +77,7 @@ async fn main() -> Result<(), String> {
                 .map_err(|_| "connection timed out")?
                 .map_err(|e| e.to_string())?;
             let (mut send, mut recv) = conn.open_bi().await.map_err(|e| e.to_string())?;
-            send.write_all(b"hello from acurast-iroh")
+            send.write_all(b"hello from acurast-p2p")
                 .await
                 .map_err(|e| e.to_string())?;
             send.finish().map_err(|e| e.to_string())?;

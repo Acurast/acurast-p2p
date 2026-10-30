@@ -2,7 +2,7 @@
 
 use std::sync::{Arc, Mutex};
 
-use acurast_iroh_ffi::{ChainClient, KeyStore, P2pError, P2pNode};
+use acurast_p2p_ffi::{ChainClient, KeyStore, P2pError, P2pNode};
 use parity_scale_codec::Encode;
 
 #[derive(Default)]

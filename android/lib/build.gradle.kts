@@ -7,7 +7,7 @@ plugins {
 
 object Library {
     const val groupId = "com.acurast"
-    const val artifactId = "acurast-iroh"
+    const val artifactId = "acurast-p2p"
 }
 
 // Release tags are `v<version>`; other builds use the development version.
@@ -17,7 +17,7 @@ val libraryVersion = System.getenv("CI_COMMIT_TAG")?.removePrefix("v") ?: "0.1.0
 val uniffiDir = layout.buildDirectory.dir("generated/uniffi")
 
 android {
-    namespace = "com.acurast.iroh"
+    namespace = "com.acurast.p2p"
     compileSdk = 35
     ndkVersion = "29.0.14206865"
 
@@ -42,8 +42,8 @@ android {
 }
 
 cargo {
-    module = "../../acurast-iroh-ffi"
-    libname = "acurast_iroh_ffi"
+    module = "../../acurast-p2p-ffi"
+    libname = "acurast_p2p_ffi"
     targets = listOf("arm", "arm64")
     profile = "release"
     prebuiltToolchains = true
@@ -94,13 +94,13 @@ dependencies {
 
 val uniffiBindings = tasks.register<Exec>("uniffiBindings") {
     dependsOn("cargoBuild")
-    workingDir("../../acurast-iroh-ffi")
+    workingDir("../../acurast-p2p-ffi")
     commandLine(
         "cargo", "run", "--release",
         "--features", "uniffi/cli",
         "--bin", "uniffi-bindgen",
         "--", "generate",
-        "--library", "../target/aarch64-linux-android/release/libacurast_iroh_ffi.so",
+        "--library", "../target/aarch64-linux-android/release/libacurast_p2p_ffi.so",
         "--language", "kotlin",
         "--no-format",
         "--out-dir", uniffiDir.get().asFile.absolutePath,

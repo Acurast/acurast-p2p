@@ -3,7 +3,7 @@
 
 use std::{net::Ipv4Addr, time::Duration};
 
-use acurast_iroh::{EndpointAddr, P2pEndpoint, Relay, SecretKey};
+use acurast_p2p::{EndpointAddr, P2pEndpoint, Relay, SecretKey};
 use iroh_relay::server::{RelayConfig, Server, ServerConfig};
 
 const ALPN: &[u8] = b"acurast/test/echo";

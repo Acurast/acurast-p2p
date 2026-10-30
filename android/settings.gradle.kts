@@ -20,5 +20,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "acurast-iroh"
+rootProject.name = "acurast-p2p"
 include(":lib")

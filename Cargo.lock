@@ -3,7 +3,7 @@
 version = 4
 
 [[package]]
-name = "acurast-iroh"
+name = "acurast-p2p"
 version = "0.1.0"
 dependencies = [
  "acurast-p2p-proto",
@@ -17,10 +17,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "acurast-iroh-ffi"
+name = "acurast-p2p-ffi"
 version = "0.1.0"
 dependencies = [
- "acurast-iroh",
+ "acurast-p2p",
  "async-trait",
  "hex",
  "parity-scale-codec",

@@ -1,11 +1,11 @@
-//! uniffi bindings of `acurast-iroh`, consumed by the Android (AAR) and iOS (xcframework)
+//! uniffi bindings of `acurast-p2p`, consumed by the Android (AAR) and iOS (xcframework)
 //! processors.
 //!
 //! The app implements [`KeyStore`] and [`ChainClient`] and starts a [`P2pNode`] with them.
 
 use std::sync::Arc;
 
-use acurast_iroh::{EndpointId, P2pEndpoint, Registration, RoleCache, platform};
+use acurast_p2p::{EndpointId, P2pEndpoint, Registration, RoleCache, platform};
 
 uniffi::setup_scaffolding!();
 
@@ -32,10 +32,10 @@ impl From<uniffi::UnexpectedUniFFICallbackError> for P2pError {
     }
 }
 
-impl From<acurast_iroh::Error> for P2pError {
-    fn from(e: acurast_iroh::Error) -> Self {
+impl From<acurast_p2p::Error> for P2pError {
+    fn from(e: acurast_p2p::Error) -> Self {
         match e {
-            acurast_iroh::Error::Platform(platform::PlatformError(reason)) => {
+            acurast_p2p::Error::Platform(platform::PlatformError(reason)) => {
                 Self::Platform { reason }
             }
             other => Self::Internal {
@@ -75,7 +75,7 @@ pub trait ChainClient: Send + Sync {
     async fn register_endpoint(&self, id: Vec<u8>, proof: Vec<u8>) -> Result<(), P2pError>;
 }
 
-/// The app's callbacks, seen by `acurast-iroh` as its platform services.
+/// The app's callbacks, seen by `acurast-p2p` as its platform services.
 struct Platform {
     key_store: Arc<dyn KeyStore>,
     chain: Arc<dyn ChainClient>,
@@ -138,7 +138,7 @@ impl P2pNode {
     ) -> Result<Arc<Self>, P2pError> {
         let platform = Arc::new(Platform { key_store, chain });
         let (endpoint, registration) =
-            acurast_iroh::start(platform.as_ref(), platform.as_ref(), Vec::new()).await?;
+            acurast_p2p::start(platform.as_ref(), platform.as_ref(), Vec::new()).await?;
         Ok(Arc::new(Self {
             roles: RoleCache::new(platform.clone()),
             platform,

@@ -7,7 +7,7 @@ use std::{
     time::Duration,
 };
 
-use acurast_iroh::{
+use acurast_p2p::{
     EndpointAddr, EndpointId, P2pEndpoint, ROLE_CACHE_NEGATIVE_TTL, ROLE_CACHE_TTL, Relay,
     RoleCache, Roles, SecretKey,
     platform::{Chain, PlatformError},
