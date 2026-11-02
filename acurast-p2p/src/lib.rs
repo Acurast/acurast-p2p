@@ -27,6 +27,8 @@ pub enum Error {
     InvalidSeed,
     #[error("unexpected data from the chain: {0}")]
     InvalidChainData(String),
+    #[error("the endpoint registration did not show up on chain in time")]
+    RegistrationTimeout,
     #[error("platform: {0}")]
     Platform(#[from] platform::PlatformError),
     #[error("cannot bind the endpoint: {0}")]

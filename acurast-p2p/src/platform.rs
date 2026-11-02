@@ -26,6 +26,6 @@ pub trait Chain: Send + Sync {
     /// Calls a runtime API at the best block (`state_call`) and returns the SCALE-encoded result.
     async fn state_call(&self, method: String, args: Vec<u8>) -> Result<Vec<u8>, PlatformError>;
     /// Submits `AcurastP2p::register_endpoint(id, proof)` signed with the processor key and
-    /// returns once it is included.
+    /// returns once it is submitted.
     async fn register_endpoint(&self, id: Vec<u8>, proof: Vec<u8>) -> Result<(), PlatformError>;
 }

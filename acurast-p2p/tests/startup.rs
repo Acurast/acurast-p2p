@@ -34,6 +34,25 @@ struct MockChain {
     relay_urls: Mutex<Vec<&'static str>>,
     registrations: Mutex<usize>,
     fail_registration: bool,
+    /// Endpoint reads before a registration shows up, like blocks until inclusion.
+    inclusion_delay: usize,
+    pending: Mutex<Option<([u8; 32], usize)>>,
+}
+
+impl MockChain {
+    fn include_pending(&self) {
+        let mut pending = self.pending.lock().unwrap();
+        let Some((id, reads_left)) = pending.as_mut() else {
+            return;
+        };
+        if *reads_left > 0 {
+            *reads_left -= 1;
+            return;
+        }
+        // A processor holds exactly one endpoint.
+        *self.endpoints.lock().unwrap() = vec![*id];
+        *pending = None;
+    }
 }
 
 #[async_trait::async_trait]
@@ -50,6 +69,7 @@ impl Chain for MockChain {
         match method.as_str() {
             "P2pApi_endpoints" => {
                 assert_eq!(args, ACCOUNT.encode());
+                self.include_pending();
                 Ok(self.endpoints.lock().unwrap().encode())
             }
             "P2pApi_relay_nodes" => {
@@ -78,8 +98,7 @@ impl Chain for MockChain {
             .unwrap()
             .verify(&message, &Signature::from_bytes(&proof))
             .map_err(|_| PlatformError("InvalidProof".into()))?;
-        // A processor holds exactly one endpoint.
-        *self.endpoints.lock().unwrap() = vec![id];
+        *self.pending.lock().unwrap() = Some((id, self.inclusion_delay));
         *self.registrations.lock().unwrap() += 1;
         Ok(())
     }
@@ -146,6 +165,37 @@ async fn new_key_replaces_the_registered_one() {
         vec![*endpoint.id().as_bytes()]
     );
     endpoint.close().await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn start_waits_until_the_registration_is_on_chain() {
+    let store = MemoryKeyStore::default();
+    let chain = MockChain {
+        inclusion_delay: 3,
+        ..Default::default()
+    };
+
+    let (endpoint, registration) = acurast_p2p::start(&store, &chain, vec![]).await.unwrap();
+
+    assert_eq!(registration, Registration::Registered);
+    assert_eq!(
+        *chain.endpoints.lock().unwrap(),
+        vec![*endpoint.id().as_bytes()]
+    );
+    endpoint.close().await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn registration_that_never_lands_times_out() {
+    let store = MemoryKeyStore::default();
+    let chain = MockChain {
+        inclusion_delay: usize::MAX,
+        ..Default::default()
+    };
+
+    let result = acurast_p2p::start(&store, &chain, vec![]).await;
+
+    assert!(matches!(result, Err(Error::RegistrationTimeout)));
 }
 
 #[tokio::test]

@@ -1,5 +1,7 @@
 //! The processor's iroh key and its registration on chain.
 
+use std::time::Duration;
+
 use acurast_p2p_proto::hash::register_proof_message;
 use iroh::SecretKey;
 
@@ -7,6 +9,11 @@ use crate::{
     Error,
     platform::{Chain, KeyStore},
 };
+
+/// How often the chain is checked while waiting for a submitted registration.
+const REGISTRATION_POLL_INTERVAL: Duration = Duration::from_secs(3);
+/// How long a submitted registration may take to show up on chain.
+const REGISTRATION_TIMEOUT: Duration = Duration::from_secs(120);
 
 /// Loads the iroh key, or creates and stores a new one on the first start.
 pub(crate) fn load_or_create_key(store: &dyn KeyStore) -> Result<SecretKey, Error> {
@@ -47,5 +54,20 @@ pub(crate) async fn ensure_registered(
     chain
         .register_endpoint(id.to_vec(), proof.to_bytes().to_vec())
         .await?;
+    wait_until_registered(chain, &id).await?;
     Ok(Registration::Registered)
+}
+
+/// Waits until the chain lists `id` for this processor, so relays admit it right after start.
+async fn wait_until_registered(chain: &dyn Chain, id: &[u8; 32]) -> Result<(), Error> {
+    let deadline = tokio::time::Instant::now() + REGISTRATION_TIMEOUT;
+    loop {
+        if crate::chain::own_endpoints(chain).await?.contains(id) {
+            return Ok(());
+        }
+        if tokio::time::Instant::now() >= deadline {
+            return Err(Error::RegistrationTimeout);
+        }
+        tokio::time::sleep(REGISTRATION_POLL_INTERVAL).await;
+    }
 }
