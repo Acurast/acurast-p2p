@@ -19,7 +19,7 @@ tracing = "0.1"
 
 [dev-dependencies]
 # The registry server of the relay nodes, to test the client against it.
-acurast-p2p-registry = { path = "../../acurast-substrate/p2p/registry" }
+acurast-p2p-registry = { git = "https://gitlab.papers.tech/papers/acurast/acurast-substrate.git", rev = "2970e97a2da06c60c142b46d098c6c88451e555f" }
 async-trait = { workspace = true }
 hex = "0.4"
 iroh-relay = { workspace = true, features = ["server"] }
