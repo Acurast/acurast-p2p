@@ -1,21 +1,29 @@
 //! The processor's iroh endpoint, connected only to the relays listed on chain.
 
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use iroh::{
     Endpoint, EndpointAddr, EndpointId, RelayMode, SecretKey,
     endpoint::{Connection, presets},
 };
+use tokio::task::JoinHandle;
 
-use crate::{Error, relays::Relay};
+use crate::{
+    Error,
+    registry::{RegistryLookup, RegistryWorker, SharedRelays},
+    relays::Relay,
+};
 
 /// iroh endpoint of a processor (or any other registered peer).
 ///
 /// It uses only the given relays, never iroh's public ones, so peers reach it through the Acurast
-/// relays or directly.
+/// relays or directly. Its address is published to the registry on the relay nodes, and the
+/// addresses of the peers it connects to by id are looked up there.
 pub struct P2pEndpoint {
     endpoint: Endpoint,
-    relays: Mutex<Vec<Relay>>,
+    relays: SharedRelays,
+    registry: RegistryLookup,
+    registry_worker: JoinHandle<()>,
 }
 
 impl P2pEndpoint {
@@ -26,15 +34,22 @@ impl P2pEndpoint {
         relays: Vec<Relay>,
         alpns: Vec<Vec<u8>>,
     ) -> Result<Self, Error> {
+        let shared_relays: SharedRelays = Arc::new(Mutex::new(relays.clone()));
+        let (registry, commands) = RegistryLookup::new(shared_relays.clone());
         let endpoint = Endpoint::builder(presets::Minimal)
             .secret_key(secret_key)
             .relay_mode(RelayMode::Custom(crate::relays::relay_map(&relays)))
+            .address_lookup(registry.clone())
             .alpns(alpns)
             .bind()
             .await?;
+        let registry_worker =
+            RegistryWorker::spawn(endpoint.clone(), shared_relays.clone(), commands);
         Ok(Self {
             endpoint,
-            relays: Mutex::new(relays),
+            relays: shared_relays,
+            registry,
+            registry_worker,
         })
     }
 
@@ -70,6 +85,7 @@ impl P2pEndpoint {
                 .insert_relay(relay.url.clone(), relay.config())
                 .await;
         }
+        self.registry.relays_changed();
     }
 
     /// Re-reads the relay nodes from the chain and applies them; returns whether they changed.
@@ -112,6 +128,14 @@ impl P2pEndpoint {
 
     /// Closes all connections and the endpoint.
     pub async fn close(&self) {
+        self.registry_worker.abort();
         self.endpoint.close().await
+    }
+}
+
+impl Drop for P2pEndpoint {
+    fn drop(&mut self) {
+        // The worker holds a handle to the endpoint, which would otherwise outlive this.
+        self.registry_worker.abort();
     }
 }

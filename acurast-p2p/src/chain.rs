@@ -23,12 +23,12 @@ pub(crate) async fn own_endpoints(chain: &dyn Chain) -> Result<Vec<[u8; 32]>, Er
     call(chain, "P2pApi_endpoints", chain.account()).await
 }
 
-/// Relay nodes listed on chain. Entries with an invalid URL are skipped.
+/// Relay nodes listed on chain. Entries with an invalid id or URL are skipped.
 pub(crate) async fn relay_nodes(chain: &dyn Chain) -> Result<Vec<Relay>, Error> {
     let nodes: Vec<([u8; 32], RelayNode)> = call(chain, "P2pApi_relay_nodes", Vec::new()).await?;
     Ok(nodes
         .into_iter()
-        .filter_map(|(_, node)| Relay::from_chain(&node.url, node.quic_port).ok())
+        .filter_map(|(id, node)| Relay::from_chain(&id, &node.url, node.quic_port).ok())
         .collect())
 }
 
@@ -64,11 +64,15 @@ mod tests {
                     assert_eq!(hex::encode(args), ALICE);
                     format!("04{ENDPOINT}")
                 }
-                "P2pApi_relay_nodes" => format!(
-                    "04{}74{}01a21ef402{ALICE}",
-                    "02".repeat(32),
-                    hex::encode("https://relay.local.test:8443"),
-                ),
+                // The same relay twice: once with a valid node id, once with an id that is no
+                // Ed25519 key.
+                "P2pApi_relay_nodes" => {
+                    let node = format!(
+                        "74{}01a21ef402{ALICE}",
+                        hex::encode("https://relay.local.test:8443")
+                    );
+                    format!("08{ENDPOINT}{node}{}{node}", "02".repeat(32))
+                }
                 _ => unreachable!(),
             };
             Ok(hex::decode(answer).unwrap())
@@ -88,7 +92,8 @@ mod tests {
         );
 
         let relays = relay_nodes(&RecordedChain).await.unwrap();
-        assert_eq!(relays.len(), 1);
+        assert_eq!(relays.len(), 1, "the relay with an invalid id is skipped");
+        assert_eq!(hex::encode(relays[0].id.as_bytes()), ENDPOINT);
         assert_eq!(relays[0].url.as_str(), "https://relay.local.test:8443/");
         assert_eq!(relays[0].quic_port, Some(7842));
     }

@@ -12,10 +12,14 @@ async-trait = { workspace = true }
 parity-scale-codec = { workspace = true }
 iroh = { workspace = true }
 iroh-relay = { workspace = true }
+n0-future = "0.3"
 thiserror = { workspace = true }
-tokio = { workspace = true }
+tokio = { workspace = true, features = ["rt", "macros"] }
+tracing = "0.1"
 
 [dev-dependencies]
+# The registry server of the relay nodes, to test the client against it.
+acurast-p2p-registry = { path = "../../acurast-substrate/p2p/registry" }
 async-trait = { workspace = true }
 hex = "0.4"
 iroh-relay = { workspace = true, features = ["server"] }

@@ -13,6 +13,11 @@ use parity_scale_codec::Encode;
 const ACCOUNT: [u8; 32] = [5; 32];
 const GENESIS: [u8; 32] = [9; 32];
 
+/// A valid relay node id: relay ids are Ed25519 public keys.
+fn relay_id() -> [u8; 32] {
+    *SecretKey::from_bytes(&[7; 32]).public().as_bytes()
+}
+
 #[derive(Default)]
 struct MemoryKeyStore(Mutex<Option<Vec<u8>>>);
 
@@ -79,7 +84,12 @@ impl Chain for MockChain {
                     .lock()
                     .unwrap()
                     .iter()
-                    .map(|url| ([1; 32], (url.as_bytes().to_vec(), Some(7842), 756, [0; 32])))
+                    .map(|url| {
+                        (
+                            relay_id(),
+                            (url.as_bytes().to_vec(), Some(7842), 756, [0; 32]),
+                        )
+                    })
                     .collect();
                 Ok(nodes.encode())
             }

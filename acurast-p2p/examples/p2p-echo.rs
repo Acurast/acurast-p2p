@@ -1,11 +1,14 @@
-//! Reaches one endpoint from another through an Acurast relay, knowing only its `EndpointId`.
+//! Reaches one endpoint from another through the Acurast relays, knowing only its `EndpointId`:
+//! the listener publishes its address to the registry of the relay nodes, where the dialer finds
+//! it.
 //!
-//! The relay admits only endpoints registered on chain (or allowlisted on the node), so register
-//! both keys first. Each run prints its secret and endpoint id; pass `--secret` to reuse a key.
+//! Relays are given as on chain, `<relay-id>@<relay-url>`, comma-separated. The relays admit only
+//! endpoints registered on chain (or allowlisted on the node), so register both keys first. Each
+//! run prints its secret and endpoint id; pass `--secret` to reuse a key.
 //!
 //! ```text
-//! cargo run -p acurast-p2p --example p2p-echo -- listen http://127.0.0.1:3340 [--secret <hex>]
-//! cargo run -p acurast-p2p --example p2p-echo -- dial http://127.0.0.1:3340 <endpoint-id> [--secret <hex>]
+//! cargo run -p acurast-p2p --example p2p-echo -- listen <relays> [--secret <hex>]
+//! cargo run -p acurast-p2p --example p2p-echo -- dial <relays> <endpoint-id> [--secret <hex>]
 //! ```
 
 use std::time::Duration;
@@ -18,10 +21,9 @@ const TIMEOUT: Duration = Duration::from_secs(20);
 #[tokio::main]
 async fn main() -> Result<(), String> {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    let usage =
-        "usage: p2p-echo listen <relay-url> | dial <relay-url> <endpoint-id> [--secret <hex>]";
-    let (mode, relay_url) = match args.as_slice() {
-        [mode, relay_url, ..] => (mode.as_str(), relay_url.as_str()),
+    let usage = "usage: p2p-echo listen <relays> | dial <relays> <endpoint-id> [--secret <hex>]";
+    let (mode, relays) = match args.as_slice() {
+        [mode, relays, ..] => (mode.as_str(), parse_relays(relays)?),
         _ => return Err(usage.into()),
     };
 
@@ -39,14 +41,14 @@ async fn main() -> Result<(), String> {
     println!("secret:      {}", hex::encode(secret.to_bytes()));
     println!("endpoint id: {}", hex::encode(secret.public().as_bytes()));
 
-    let relay = Relay::from_chain(relay_url.as_bytes(), None).map_err(|e| e.to_string())?;
-    let endpoint = P2pEndpoint::bind(secret, vec![relay.clone()], vec![ALPN.to_vec()])
+    let endpoint = P2pEndpoint::bind(secret, relays, vec![ALPN.to_vec()])
         .await
         .map_err(|e| e.to_string())?;
     tokio::time::timeout(TIMEOUT, endpoint.online())
         .await
-        .map_err(|_| "the relay did not admit this endpoint (is it registered?)")?;
-    println!("[ok]   connected to relay {}", relay.url);
+        .map_err(|_| "the relays did not admit this endpoint (is it registered?)")?;
+    let home_relay = endpoint.addr().relay_urls().next().cloned();
+    println!("[ok]   connected to home relay {home_relay:?}");
 
     match mode {
         "listen" => loop {
@@ -71,8 +73,8 @@ async fn main() -> Result<(), String> {
                 .try_into()
                 .map_err(|_| "invalid endpoint id: expected 32 bytes")?;
             let id = EndpointId::from_bytes(&id).map_err(|e| e.to_string())?;
-            let addr = EndpointAddr::new(id).with_relay_url(relay.url.clone());
-            let conn = tokio::time::timeout(TIMEOUT, endpoint.connect(addr, ALPN))
+            // Only the id: the address comes from the registry.
+            let conn = tokio::time::timeout(TIMEOUT, endpoint.connect(EndpointAddr::new(id), ALPN))
                 .await
                 .map_err(|_| "connection timed out")?
                 .map_err(|e| e.to_string())?;
@@ -89,4 +91,20 @@ async fn main() -> Result<(), String> {
         }
         _ => Err(usage.into()),
     }
+}
+
+/// `<relay-id>@<relay-url>`, comma-separated.
+fn parse_relays(arg: &str) -> Result<Vec<Relay>, String> {
+    arg.split(',')
+        .map(|entry| {
+            let (id, url) = entry.split_once('@').ok_or(format!(
+                "invalid relay {entry}: expected <relay-id>@<relay-url>"
+            ))?;
+            let id: [u8; 32] = hex::decode(id.trim_start_matches("0x"))
+                .map_err(|e| format!("invalid relay id {id}: {e}"))?
+                .try_into()
+                .map_err(|_| format!("invalid relay id {id}: expected 32 bytes"))?;
+            Relay::from_chain(&id, url.as_bytes(), None).map_err(|e| format!("{entry}: {e}"))
+        })
+        .collect()
 }

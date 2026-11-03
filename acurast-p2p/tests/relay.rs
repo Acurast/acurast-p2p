@@ -15,7 +15,12 @@ async fn spawn_relay() -> (Server, Relay) {
     config.relay = Some(RelayConfig::new((Ipv4Addr::LOCALHOST, 0)));
     let server = Server::spawn(config).await.unwrap();
     let url = format!("http://{}", server.http_addr().unwrap());
-    let relay = Relay::from_chain(url.as_bytes(), None).unwrap();
+    let relay = Relay::from_chain(
+        SecretKey::generate().public().as_bytes(),
+        url.as_bytes(),
+        None,
+    )
+    .unwrap();
     (server, relay)
 }
 

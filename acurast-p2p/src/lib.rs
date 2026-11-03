@@ -7,6 +7,7 @@ mod chain;
 mod endpoint;
 mod identity;
 pub mod platform;
+mod registry;
 mod relays;
 mod roles;
 mod startup;
@@ -23,6 +24,8 @@ pub use startup::start;
 pub enum Error {
     #[error("invalid relay URL")]
     InvalidRelayUrl,
+    #[error("invalid relay endpoint id")]
+    InvalidRelayId,
     #[error("the stored iroh seed is not 32 bytes")]
     InvalidSeed,
     #[error("unexpected data from the chain: {0}")]

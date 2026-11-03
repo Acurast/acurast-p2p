@@ -159,6 +159,7 @@ async fn processor_only_service_refuses_other_roles() {
     config.relay = Some(RelayConfig::new((Ipv4Addr::LOCALHOST, 0)));
     let relay_server = Server::spawn(config).await.unwrap();
     let relay = Relay::from_chain(
+        SecretKey::generate().public().as_bytes(),
         format!("http://{}", relay_server.http_addr().unwrap()).as_bytes(),
         None,
     )

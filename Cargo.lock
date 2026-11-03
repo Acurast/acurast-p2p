@@ -6,14 +6,17 @@ version = 4
 name = "acurast-p2p"
 version = "0.1.0"
 dependencies = [
- "acurast-p2p-proto",
+ "acurast-p2p-proto 0.27.0 (git+https://gitlab.papers.tech/papers/acurast/acurast-substrate.git?rev=a4e03a8cd2a1444776ef76e0393f912275b3cc3f)",
+ "acurast-p2p-registry",
  "async-trait",
  "hex",
  "iroh",
  "iroh-relay",
+ "n0-future",
  "parity-scale-codec",
  "thiserror 2.0.21",
  "tokio",
+ "tracing",
 ]
 
 [[package]]
@@ -32,11 +35,29 @@ dependencies = [
 [[package]]
 name = "acurast-p2p-proto"
 version = "0.27.0"
+dependencies = [
+ "blake2",
+ "postcard",
+ "serde",
+]
+
+[[package]]
+name = "acurast-p2p-proto"
+version = "0.27.0"
 source = "git+https://gitlab.papers.tech/papers/acurast/acurast-substrate.git?rev=a4e03a8cd2a1444776ef76e0393f912275b3cc3f#a4e03a8cd2a1444776ef76e0393f912275b3cc3f"
 dependencies = [
  "blake2",
  "postcard",
  "serde",
+]
+
+[[package]]
+name = "acurast-p2p-registry"
+version = "0.27.0"
+dependencies = [
+ "acurast-p2p-proto 0.27.0",
+ "iroh",
+ "log",
 ]
 
 [[package]]
