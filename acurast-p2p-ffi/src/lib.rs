@@ -128,6 +128,10 @@ pub struct PingResult {
     pub rtt_ms: u64,
     /// Whether the connection went directly over IP rather than through a relay.
     pub direct: bool,
+    /// The peer's address on a direct connection.
+    pub remote_addr: Option<String>,
+    /// Whether the direct connection stays in the local network.
+    pub local: bool,
 }
 
 /// The processor's P2P endpoint.
@@ -208,7 +212,12 @@ impl P2pNode {
         Ok(PingResult {
             connect_ms: report.connect.as_millis() as u64,
             rtt_ms: report.rtt.as_millis() as u64,
-            direct: report.path == PingPath::Direct,
+            direct: matches!(report.path, PingPath::Direct(_)),
+            remote_addr: match report.path {
+                PingPath::Direct(addr) => Some(addr.to_string()),
+                PingPath::Relay => None,
+            },
+            local: report.path.is_local(),
         })
     }
 

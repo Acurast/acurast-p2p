@@ -1,10 +1,14 @@
 //! Ping between endpoints, to check that two endpoints reach each other: the caller opens a
 //! connection with [`ALPN_PING`], sends `ping` and gets `pong` back.
 
-use std::{sync::Arc, time::Duration};
+use std::{
+    net::{IpAddr, SocketAddr},
+    sync::Arc,
+    time::Duration,
+};
 
 use acurast_p2p_proto::{ERR_LIMIT, ERR_PROTOCOL};
-use iroh::{Endpoint, EndpointAddr, EndpointId, endpoint::Connection};
+use iroh::{Endpoint, EndpointAddr, EndpointId, TransportAddr, endpoint::Connection};
 use tokio::{sync::Semaphore, task::JoinHandle, time::Instant};
 
 use crate::{Error, P2pEndpoint, RoleCache, Roles};
@@ -22,10 +26,28 @@ const CLOSE_TIMEOUT: Duration = Duration::from_secs(10);
 /// How the ping reached the peer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PingPath {
-    /// Directly over IP.
-    Direct,
+    /// Directly over IP, to the peer's address.
+    Direct(SocketAddr),
     /// Through a relay.
     Relay,
+}
+
+impl PingPath {
+    /// Whether the path stays in the local network: a direct path to a private, link-local,
+    /// unique local or loopback address.
+    pub fn is_local(&self) -> bool {
+        match self {
+            Self::Direct(addr) => is_local_ip(addr.ip()),
+            Self::Relay => false,
+        }
+    }
+}
+
+fn is_local_ip(ip: IpAddr) -> bool {
+    match ip {
+        IpAddr::V4(ip) => ip.is_private() || ip.is_link_local() || ip.is_loopback(),
+        IpAddr::V6(ip) => ip.is_unique_local() || ip.is_unicast_link_local() || ip.is_loopback(),
+    }
 }
 
 /// Outcome of [`P2pEndpoint::ping`].
@@ -125,10 +147,31 @@ async fn exchange(conn: &Connection) -> Result<Vec<u8>, Error> {
 
 fn selected_path(conn: &Connection) -> PingPath {
     let paths = conn.paths();
-    let direct = paths.iter().any(|path| path.is_selected() && path.is_ip());
-    if direct {
-        PingPath::Direct
-    } else {
-        PingPath::Relay
+    let direct = paths
+        .iter()
+        .filter(|path| path.is_selected())
+        .find_map(|path| match path.remote_addr() {
+            TransportAddr::Ip(addr) => Some(*addr),
+            _ => None,
+        });
+    direct.map_or(PingPath::Relay, PingPath::Direct)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn local_paths_are_the_direct_ones_to_local_addresses() {
+        let direct = |addr: &str| PingPath::Direct(addr.parse().unwrap());
+
+        assert!(direct("192.168.1.20:4000").is_local());
+        assert!(direct("10.0.0.5:4000").is_local());
+        assert!(direct("169.254.3.4:4000").is_local());
+        assert!(direct("[fd12::1]:4000").is_local());
+        assert!(direct("[fe80::1]:4000").is_local());
+        assert!(!direct("85.1.2.3:4000").is_local());
+        assert!(!direct("[2a02::1]:4000").is_local());
+        assert!(!PingPath::Relay.is_local());
     }
 }
