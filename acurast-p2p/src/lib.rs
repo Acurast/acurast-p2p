@@ -6,6 +6,7 @@
 mod chain;
 mod endpoint;
 mod identity;
+mod ping;
 pub mod platform;
 mod registry;
 mod relays;
@@ -15,6 +16,7 @@ mod startup;
 pub use endpoint::P2pEndpoint;
 pub use identity::Registration;
 pub use iroh::{EndpointAddr, EndpointId, RelayUrl, SecretKey, endpoint::Connection};
+pub use ping::{ALPN_PING, PingPath, PingReport};
 pub use relays::Relay;
 pub use roles::{ROLE_CACHE_NEGATIVE_TTL, ROLE_CACHE_TTL, RoleCache, Roles};
 pub use startup::start;
@@ -40,4 +42,6 @@ pub enum Error {
     Connect(#[from] iroh::endpoint::ConnectError),
     #[error("incoming connection failed: {0}")]
     Accept(#[from] iroh::endpoint::ConnectingError),
+    #[error("ping failed: {0}")]
+    Ping(String),
 }

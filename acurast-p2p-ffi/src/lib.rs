@@ -3,9 +3,10 @@
 //!
 //! The app implements [`KeyStore`] and [`ChainClient`] and starts a [`P2pNode`] with them.
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
-use acurast_p2p::{EndpointId, P2pEndpoint, Registration, RoleCache, platform};
+use acurast_p2p::{EndpointId, P2pEndpoint, PingPath, Registration, RoleCache, platform};
+use tokio::task::JoinHandle;
 
 uniffi::setup_scaffolding!();
 
@@ -118,13 +119,25 @@ impl platform::Chain for Platform {
     }
 }
 
+/// Outcome of [`P2pNode::ping`].
+#[derive(Debug, uniffi::Record)]
+pub struct PingResult {
+    /// Milliseconds to set up the connection.
+    pub connect_ms: u64,
+    /// Milliseconds from sending `ping` to receiving `pong`.
+    pub rtt_ms: u64,
+    /// Whether the connection went directly over IP rather than through a relay.
+    pub direct: bool,
+}
+
 /// The processor's P2P endpoint.
 #[derive(uniffi::Object)]
 pub struct P2pNode {
     platform: Arc<Platform>,
     endpoint: P2pEndpoint,
-    roles: RoleCache,
+    roles: Arc<RoleCache>,
     registered_now: bool,
+    ping_server: Mutex<Option<JoinHandle<()>>>,
 }
 
 #[uniffi::export(async_runtime = "tokio")]
@@ -140,10 +153,11 @@ impl P2pNode {
         let (endpoint, registration) =
             acurast_p2p::start(platform.as_ref(), platform.as_ref(), Vec::new()).await?;
         Ok(Arc::new(Self {
-            roles: RoleCache::new(platform.clone()),
+            roles: Arc::new(RoleCache::new(platform.clone())),
             platform,
             endpoint,
             registered_now: registration == Registration::Registered,
+            ping_server: Mutex::new(None),
         }))
     }
 
@@ -178,9 +192,37 @@ impl P2pNode {
         Ok(self.roles.roles(&id).await?.0)
     }
 
+    /// Starts answering the pings of registered peers; calling it again has no effect. (Async so
+    /// that it runs on the library's runtime, which the answering task needs.)
+    pub async fn serve_ping(&self) {
+        let mut server = self.ping_server.lock().expect("ping server lock poisoned");
+        if server.is_none() {
+            *server = Some(self.endpoint.serve_ping(self.roles.clone()));
+        }
+    }
+
+    /// Pings the hex-encoded `endpoint_id`, whose address comes from the registry.
+    pub async fn ping(&self, endpoint_id: String) -> Result<PingResult, P2pError> {
+        let id = parse_endpoint_id(&endpoint_id)?;
+        let report = self.endpoint.ping(id).await?;
+        Ok(PingResult {
+            connect_ms: report.connect.as_millis() as u64,
+            rtt_ms: report.rtt.as_millis() as u64,
+            direct: report.path == PingPath::Direct,
+        })
+    }
+
     /// Closes the endpoint and its connections. (Not `close`, which the Kotlin bindings use to
     /// free the object.)
     pub async fn shutdown(&self) {
+        if let Some(server) = self
+            .ping_server
+            .lock()
+            .expect("ping server lock poisoned")
+            .take()
+        {
+            server.abort();
+        }
         self.endpoint.close().await
     }
 }

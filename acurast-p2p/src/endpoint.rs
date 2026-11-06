@@ -24,6 +24,7 @@ pub struct P2pEndpoint {
     relays: SharedRelays,
     registry: RegistryLookup,
     registry_worker: JoinHandle<()>,
+    alpns: Mutex<Vec<Vec<u8>>>,
 }
 
 impl P2pEndpoint {
@@ -40,7 +41,7 @@ impl P2pEndpoint {
             .secret_key(secret_key)
             .relay_mode(RelayMode::Custom(crate::relays::relay_map(&relays)))
             .address_lookup(registry.clone())
-            .alpns(alpns)
+            .alpns(alpns.clone())
             .bind()
             .await?;
         let registry_worker =
@@ -50,6 +51,7 @@ impl P2pEndpoint {
             relays: shared_relays,
             registry,
             registry_worker,
+            alpns: Mutex::new(alpns),
         })
     }
 
@@ -96,6 +98,15 @@ impl P2pEndpoint {
         }
         self.set_relays(relays).await;
         Ok(true)
+    }
+
+    /// Accepts the protocol `alpn` on new incoming connections, in addition to the others.
+    pub(crate) fn add_alpn(&self, alpn: &[u8]) {
+        let mut alpns = self.alpns.lock().expect("ALPN list lock poisoned");
+        if !alpns.iter().any(|a| a == alpn) {
+            alpns.push(alpn.to_vec());
+            self.endpoint.set_alpns(alpns.clone());
+        }
     }
 
     /// The relays in use.
