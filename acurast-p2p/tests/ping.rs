@@ -127,7 +127,7 @@ async fn registered_peers_get_pong_and_others_are_refused() {
     let registered = bind(&node.relay).await;
     let unknown = bind(&node.relay).await;
     chain.set(registered.id(), Roles::REGISTERED | Roles::PROCESSOR);
-    let _serving = listener.serve_ping(Arc::new(RoleCache::new(chain.clone())));
+    listener.serve_ping(Arc::new(RoleCache::new(chain.clone())));
 
     tokio::time::timeout(TIMEOUT, async {
         while node.registry.len() < 3 {

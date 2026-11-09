@@ -3,10 +3,9 @@
 //!
 //! The app implements [`KeyStore`] and [`ChainClient`] and starts a [`P2pNode`] with them.
 
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use acurast_p2p::{EndpointId, P2pEndpoint, PingPath, Registration, RoleCache, platform};
-use tokio::task::JoinHandle;
 
 uniffi::setup_scaffolding!();
 
@@ -76,6 +75,15 @@ pub trait ChainClient: Send + Sync {
     async fn register_endpoint(&self, id: Vec<u8>, proof: Vec<u8>) -> Result<(), P2pError>;
 }
 
+/// Receives the assignment notices of relay nodes.
+#[uniffi::export(with_foreign)]
+pub trait AssignmentListener: Send + Sync {
+    /// Jobs were assigned to this processor in `block`; `jobs` holds their SCALE-encoded ids. Only
+    /// a hint: the app reads its assignments from the chain. Called on a library thread, so it
+    /// should return quickly.
+    fn on_assignments(&self, block: u32, jobs: Vec<Vec<u8>>);
+}
+
 /// The app's callbacks, seen by `acurast-p2p` as its platform services.
 struct Platform {
     key_store: Arc<dyn KeyStore>,
@@ -141,7 +149,6 @@ pub struct P2pNode {
     endpoint: P2pEndpoint,
     roles: Arc<RoleCache>,
     registered_now: bool,
-    ping_server: Mutex<Option<JoinHandle<()>>>,
 }
 
 #[uniffi::export(async_runtime = "tokio")]
@@ -161,7 +168,6 @@ impl P2pNode {
             platform,
             endpoint,
             registered_now: registration == Registration::Registered,
-            ping_server: Mutex::new(None),
         }))
     }
 
@@ -196,13 +202,19 @@ impl P2pNode {
         Ok(self.roles.roles(&id).await?.0)
     }
 
-    /// Starts answering the pings of registered peers; calling it again has no effect. (Async so
-    /// that it runs on the library's runtime, which the answering task needs.)
+    /// Starts answering the pings of registered peers. (Async so that it runs on the library's
+    /// runtime, which accepting connections needs.)
     pub async fn serve_ping(&self) {
-        let mut server = self.ping_server.lock().expect("ping server lock poisoned");
-        if server.is_none() {
-            *server = Some(self.endpoint.serve_ping(self.roles.clone()));
-        }
+        self.endpoint.serve_ping(self.roles.clone());
+    }
+
+    /// Starts accepting the assignment notices of relay nodes, passing each to `listener`; a
+    /// later call replaces the listener. (Async for the same reason as [`Self::serve_ping`].)
+    pub async fn serve_assignments(&self, listener: Arc<dyn AssignmentListener>) {
+        self.endpoint.serve_assignments(
+            self.roles.clone(),
+            Arc::new(move |notice| listener.on_assignments(notice.block, notice.jobs)),
+        );
     }
 
     /// Pings the hex-encoded `endpoint_id`, whose address comes from the registry.
@@ -224,14 +236,6 @@ impl P2pNode {
     /// Closes the endpoint and its connections. (Not `close`, which the Kotlin bindings use to
     /// free the object.)
     pub async fn shutdown(&self) {
-        if let Some(server) = self
-            .ping_server
-            .lock()
-            .expect("ping server lock poisoned")
-            .take()
-        {
-            server.abort();
-        }
         self.endpoint.close().await
     }
 }

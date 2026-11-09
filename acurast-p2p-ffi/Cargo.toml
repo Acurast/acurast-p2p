@@ -15,7 +15,6 @@ acurast-p2p = { workspace = true }
 async-trait = { workspace = true }
 hex = "0.4"
 thiserror = { workspace = true }
-tokio = { workspace = true }
 uniffi = { workspace = true, features = ["tokio"] }
 
 [dev-dependencies]

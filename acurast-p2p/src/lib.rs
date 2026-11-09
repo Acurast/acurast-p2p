@@ -3,6 +3,7 @@
 //! Shared by the Android and iOS processors through `acurast-p2p-ffi`. Everything that depends on
 //! the platform (key storage, chain access, extrinsic signing) is provided by the app.
 
+mod assignments;
 mod chain;
 mod endpoint;
 mod identity;
@@ -11,8 +12,10 @@ pub mod platform;
 mod registry;
 mod relays;
 mod roles;
+mod services;
 mod startup;
 
+pub use assignments::{ALPN_ASSIGNMENTS, AssignmentNotice, OnNotice};
 pub use endpoint::P2pEndpoint;
 pub use identity::Registration;
 pub use iroh::{EndpointAddr, EndpointId, RelayUrl, SecretKey, endpoint::Connection};

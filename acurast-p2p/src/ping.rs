@@ -7,9 +7,9 @@ use std::{
     time::Duration,
 };
 
-use acurast_p2p_proto::{ERR_LIMIT, ERR_PROTOCOL};
-use iroh::{Endpoint, EndpointAddr, EndpointId, TransportAddr, endpoint::Connection};
-use tokio::{sync::Semaphore, task::JoinHandle, time::Instant};
+use acurast_p2p_proto::ERR_PROTOCOL;
+use iroh::{EndpointAddr, EndpointId, TransportAddr, endpoint::Connection};
+use tokio::time::Instant;
 
 use crate::{Error, P2pEndpoint, RoleCache, Roles};
 
@@ -18,8 +18,6 @@ pub const ALPN_PING: &[u8] = b"acurast/ping/1";
 
 const PING: &[u8] = b"ping";
 const PONG: &[u8] = b"pong";
-/// Pings answered at the same time; further ones are refused with [`ERR_LIMIT`].
-const MAX_CONCURRENT_PINGS: usize = 16;
 /// How long an answered connection waits for the caller to close it.
 const CLOSE_TIMEOUT: Duration = Duration::from_secs(10);
 
@@ -63,12 +61,14 @@ pub struct PingReport {
 
 impl P2pEndpoint {
     /// Answers the pings of registered peers until the endpoint closes.
-    ///
-    /// The returned task accepts all incoming connections of this endpoint and closes those that
-    /// are not pings.
-    pub fn serve_ping(&self, roles: Arc<RoleCache>) -> JoinHandle<()> {
-        self.add_alpn(ALPN_PING);
-        tokio::spawn(accept_pings(self.inner().clone(), roles))
+    pub fn serve_ping(&self, roles: Arc<RoleCache>) {
+        self.serve(
+            ALPN_PING,
+            Arc::new(move |conn| {
+                let roles = roles.clone();
+                Box::pin(async move { answer(&conn, &roles).await })
+            }),
+        );
     }
 
     /// Pings the endpoint `id`, whose address comes from the registry.
@@ -87,28 +87,6 @@ impl P2pEndpoint {
             pong if pong == PONG => Ok(PingReport { connect, rtt, path }),
             _ => Err(Error::Ping("unexpected reply".into())),
         }
-    }
-}
-
-async fn accept_pings(endpoint: Endpoint, roles: Arc<RoleCache>) {
-    let limit = Arc::new(Semaphore::new(MAX_CONCURRENT_PINGS));
-    while let Some(incoming) = endpoint.accept().await {
-        let roles = roles.clone();
-        let limit = limit.clone();
-        tokio::spawn(async move {
-            let Ok(conn) = incoming.await else {
-                return;
-            };
-            if conn.alpn() != ALPN_PING {
-                conn.close(ERR_PROTOCOL.into(), b"protocol");
-                return;
-            }
-            let Ok(_permit) = limit.try_acquire() else {
-                conn.close(ERR_LIMIT.into(), b"limit");
-                return;
-            };
-            answer(&conn, &roles).await;
-        });
     }
 }
 
