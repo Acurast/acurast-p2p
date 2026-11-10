@@ -12,6 +12,7 @@ use crate::{
     Error,
     registry::{RegistryLookup, RegistryWorker, SharedRelays},
     relays::Relay,
+    services::Services,
 };
 
 /// iroh endpoint of a processor (or any other registered peer).
@@ -25,6 +26,7 @@ pub struct P2pEndpoint {
     registry: RegistryLookup,
     registry_worker: JoinHandle<()>,
     alpns: Mutex<Vec<Vec<u8>>>,
+    services: Services,
 }
 
 impl P2pEndpoint {
@@ -52,6 +54,7 @@ impl P2pEndpoint {
             registry,
             registry_worker,
             alpns: Mutex::new(alpns),
+            services: Services::default(),
         })
     }
 
@@ -100,6 +103,11 @@ impl P2pEndpoint {
         Ok(true)
     }
 
+    /// The services accepting incoming connections.
+    pub(crate) fn services(&self) -> &Services {
+        &self.services
+    }
+
     /// Accepts the protocol `alpn` on new incoming connections, in addition to the others.
     pub(crate) fn add_alpn(&self, alpn: &[u8]) {
         let mut alpns = self.alpns.lock().expect("ALPN list lock poisoned");
@@ -140,6 +148,7 @@ impl P2pEndpoint {
     /// Closes all connections and the endpoint.
     pub async fn close(&self) {
         self.registry_worker.abort();
+        self.services.stop();
         self.endpoint.close().await
     }
 }

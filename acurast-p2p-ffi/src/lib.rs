@@ -1,12 +1,15 @@
 //! uniffi bindings of `acurast-p2p`, consumed by the Android (AAR) and iOS (xcframework)
 //! processors.
 //!
-//! The app implements [`KeyStore`] and [`ChainClient`] and starts a [`P2pNode`] with them.
+//! The app implements [`KeyStore`] and [`ChainClient`] and starts a [`P2pNode`] with them; it
+//! implements [`AssignmentListener`] and [`ManagerCommandHandler`] for the services it serves.
 
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
-use acurast_p2p::{EndpointId, P2pEndpoint, PingPath, Registration, RoleCache, platform};
-use tokio::task::JoinHandle;
+use acurast_p2p::{
+    EndpointId, ManageCommand, ManageError, ManageReply, P2pEndpoint, PingPath, Registration,
+    RoleCache, platform,
+};
 
 uniffi::setup_scaffolding!();
 
@@ -76,6 +79,136 @@ pub trait ChainClient: Send + Sync {
     async fn register_endpoint(&self, id: Vec<u8>, proof: Vec<u8>) -> Result<(), P2pError>;
 }
 
+/// Receives the assignment notices of relay nodes.
+#[uniffi::export(with_foreign)]
+pub trait AssignmentListener: Send + Sync {
+    /// Jobs were assigned to this processor in `block`; `jobs` holds their SCALE-encoded ids. Only
+    /// a hint: the app reads its assignments from the chain. Called on a library thread, so it
+    /// should return quickly.
+    fn on_assignments(&self, block: u32, jobs: Vec<Vec<u8>>);
+}
+
+/// A command of the processor's manager.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+pub enum ManagerCommand {
+    /// Current state of the processor.
+    Status,
+    /// Restarts the device. Without `force` it should be refused while a deployment runs.
+    Reboot { force: bool },
+    /// Restarts the processor app. Without `force` it should be refused while a deployment runs.
+    RestartApp { force: bool },
+}
+
+/// Why the processor does not run a command of its manager.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+pub enum ManagerCommandRefusal {
+    /// The caller is not the manager of this processor.
+    Forbidden,
+    /// The command is too old.
+    Stale,
+    /// A deployment runs and the command was not forced.
+    Busy,
+    /// The processor cannot run this command.
+    Unsupported,
+    /// The command could not be run.
+    Failed,
+}
+
+/// State of the processor, as reported to its manager.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct ProcessorState {
+    pub app_version: String,
+    /// Operating system and its version.
+    pub os: String,
+    /// Battery level in percent.
+    pub battery_percent: Option<u8>,
+    pub charging: Option<bool>,
+    /// Whether a deployment runs.
+    pub busy: bool,
+    /// Seconds since the app started.
+    pub uptime_secs: u64,
+}
+
+/// The processor's answer to a command of its manager.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Enum)]
+pub enum ManagerCommandReply {
+    /// Answer to [`ManagerCommand::Status`].
+    Status {
+        state: ProcessorState,
+    },
+    /// The command will run: the library calls [`ManagerCommandHandler::execute`] once the manager
+    /// got the reply.
+    Accepted,
+    Refused {
+        reason: ManagerCommandRefusal,
+    },
+}
+
+/// Handles the commands of the processor's manager. The library already checked that they come
+/// from the manager and are recent.
+#[uniffi::export(with_foreign)]
+#[async_trait::async_trait]
+pub trait ManagerCommandHandler: Send + Sync {
+    /// SCALE-encoded account of this processor's manager (32 bytes), `null`/`nil` while it is not
+    /// paired.
+    async fn manager(&self) -> Option<Vec<u8>>;
+    /// Answer to `command`: the state, `Accepted` if it will run, or why not.
+    async fn prepare(&self, command: ManagerCommand) -> ManagerCommandReply;
+    /// Runs a command answered with `Accepted`.
+    async fn execute(&self, command: ManagerCommand);
+}
+
+impl From<ManageCommand> for ManagerCommand {
+    fn from(command: ManageCommand) -> Self {
+        match command {
+            ManageCommand::Status => Self::Status,
+            ManageCommand::Reboot { force } => Self::Reboot { force },
+            ManageCommand::RestartApp { force } => Self::RestartApp { force },
+        }
+    }
+}
+
+impl From<ManagerCommandReply> for ManageReply {
+    fn from(reply: ManagerCommandReply) -> Self {
+        match reply {
+            ManagerCommandReply::Status { state } => Self::Status(acurast_p2p::ProcessorStatus {
+                app_version: state.app_version,
+                os: state.os,
+                battery_percent: state.battery_percent,
+                charging: state.charging,
+                busy: state.busy,
+                uptime_secs: state.uptime_secs,
+            }),
+            ManagerCommandReply::Accepted => Self::Accepted,
+            ManagerCommandReply::Refused { reason } => Self::Err(match reason {
+                ManagerCommandRefusal::Forbidden => ManageError::Forbidden,
+                ManagerCommandRefusal::Stale => ManageError::Stale,
+                ManagerCommandRefusal::Busy => ManageError::Busy,
+                ManagerCommandRefusal::Unsupported => ManageError::Unsupported,
+                ManagerCommandRefusal::Failed => ManageError::Failed,
+            }),
+        }
+    }
+}
+
+/// The app's command handler, seen by `acurast-p2p`.
+struct ManageBridge(Arc<dyn ManagerCommandHandler>);
+
+#[async_trait::async_trait]
+impl acurast_p2p::ManageHandler for ManageBridge {
+    async fn manager(&self) -> Option<Vec<u8>> {
+        self.0.manager().await
+    }
+
+    async fn prepare(&self, command: ManageCommand) -> ManageReply {
+        self.0.prepare(command.into()).await.into()
+    }
+
+    async fn execute(&self, command: ManageCommand) {
+        self.0.execute(command.into()).await
+    }
+}
+
 /// The app's callbacks, seen by `acurast-p2p` as its platform services.
 struct Platform {
     key_store: Arc<dyn KeyStore>,
@@ -141,7 +274,6 @@ pub struct P2pNode {
     endpoint: P2pEndpoint,
     roles: Arc<RoleCache>,
     registered_now: bool,
-    ping_server: Mutex<Option<JoinHandle<()>>>,
 }
 
 #[uniffi::export(async_runtime = "tokio")]
@@ -161,7 +293,6 @@ impl P2pNode {
             platform,
             endpoint,
             registered_now: registration == Registration::Registered,
-            ping_server: Mutex::new(None),
         }))
     }
 
@@ -196,13 +327,29 @@ impl P2pNode {
         Ok(self.roles.roles(&id).await?.0)
     }
 
-    /// Starts answering the pings of registered peers; calling it again has no effect. (Async so
-    /// that it runs on the library's runtime, which the answering task needs.)
+    /// Starts answering the pings of registered peers. (Async so that it runs on the library's
+    /// runtime, which accepting connections needs.)
     pub async fn serve_ping(&self) {
-        let mut server = self.ping_server.lock().expect("ping server lock poisoned");
-        if server.is_none() {
-            *server = Some(self.endpoint.serve_ping(self.roles.clone()));
-        }
+        self.endpoint.serve_ping(self.roles.clone());
+    }
+
+    /// Starts accepting the assignment notices of relay nodes, passing each to `listener`; a
+    /// later call replaces the listener. (Async for the same reason as [`Self::serve_ping`].)
+    pub async fn serve_assignments(&self, listener: Arc<dyn AssignmentListener>) {
+        self.endpoint.serve_assignments(
+            self.roles.clone(),
+            Arc::new(move |notice| listener.on_assignments(notice.block, notice.jobs)),
+        );
+    }
+
+    /// Starts accepting the commands of this processor's manager, passing them to `handler`; a
+    /// later call replaces the handler. (Async for the same reason as [`Self::serve_ping`].)
+    pub async fn serve_manager_commands(&self, handler: Arc<dyn ManagerCommandHandler>) {
+        self.endpoint.serve_manage(
+            self.roles.clone(),
+            self.platform.clone(),
+            Arc::new(ManageBridge(handler)),
+        );
     }
 
     /// Pings the hex-encoded `endpoint_id`, whose address comes from the registry.
@@ -224,14 +371,6 @@ impl P2pNode {
     /// Closes the endpoint and its connections. (Not `close`, which the Kotlin bindings use to
     /// free the object.)
     pub async fn shutdown(&self) {
-        if let Some(server) = self
-            .ping_server
-            .lock()
-            .expect("ping server lock poisoned")
-            .take()
-        {
-            server.abort();
-        }
         self.endpoint.close().await
     }
 }

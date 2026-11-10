@@ -23,6 +23,15 @@ pub(crate) async fn own_endpoints(chain: &dyn Chain) -> Result<Vec<[u8; 32]>, Er
     call(chain, "P2pApi_endpoints", chain.account()).await
 }
 
+/// Account that registered the endpoint `id`, SCALE-encoded.
+pub(crate) async fn endpoint_owner(
+    chain: &dyn Chain,
+    id: &[u8; 32],
+) -> Result<Option<Vec<u8>>, Error> {
+    let owner: Option<[u8; 32]> = call(chain, "P2pApi_endpoint_owner", id.to_vec()).await?;
+    Ok(owner.map(|owner| owner.to_vec()))
+}
+
 /// Relay nodes listed on chain. Entries with an invalid id or URL are skipped.
 pub(crate) async fn relay_nodes(chain: &dyn Chain) -> Result<Vec<Relay>, Error> {
     let nodes: Vec<([u8; 32], RelayNode)> = call(chain, "P2pApi_relay_nodes", Vec::new()).await?;
