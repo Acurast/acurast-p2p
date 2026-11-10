@@ -7,6 +7,7 @@ mod assignments;
 mod chain;
 mod endpoint;
 mod identity;
+mod manage;
 mod ping;
 pub mod platform;
 mod registry;
@@ -19,6 +20,10 @@ pub use assignments::{ALPN_ASSIGNMENTS, AssignmentNotice, OnNotice};
 pub use endpoint::P2pEndpoint;
 pub use identity::Registration;
 pub use iroh::{EndpointAddr, EndpointId, RelayUrl, SecretKey, endpoint::Connection};
+pub use manage::{
+    ALPN_MANAGE, ManageCommand, ManageError, ManageHandler, ManageReply, ManageRequest,
+    ProcessorStatus,
+};
 pub use ping::{ALPN_PING, PingPath, PingReport};
 pub use relays::Relay;
 pub use roles::{ROLE_CACHE_NEGATIVE_TTL, ROLE_CACHE_TTL, RoleCache, Roles};
@@ -47,4 +52,6 @@ pub enum Error {
     Accept(#[from] iroh::endpoint::ConnectingError),
     #[error("ping failed: {0}")]
     Ping(String),
+    #[error("manager command failed: {0}")]
+    Manage(String),
 }
