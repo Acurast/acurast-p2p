@@ -15,6 +15,7 @@ mod relays;
 mod roles;
 mod services;
 mod startup;
+mod telemetry;
 
 pub use assignments::{ALPN_ASSIGNMENTS, AssignmentNotice, OnNotice};
 pub use endpoint::P2pEndpoint;
@@ -28,6 +29,10 @@ pub use ping::{ALPN_PING, PingPath, PingReport};
 pub use relays::Relay;
 pub use roles::{ROLE_CACHE_NEGATIVE_TTL, ROLE_CACHE_TTL, RoleCache, Roles};
 pub use startup::start;
+pub use telemetry::{
+    ALPN_TELEMETRY, ConnectionStats, NetworkReport, TelemetryError, TelemetryPlatform,
+    TelemetryReply, TelemetryReport,
+};
 
 /// Errors of the P2P layer.
 #[derive(Debug, thiserror::Error)]
@@ -54,4 +59,6 @@ pub enum Error {
     Ping(String),
     #[error("manager command failed: {0}")]
     Manage(String),
+    #[error("network report failed: {0}")]
+    Telemetry(String),
 }

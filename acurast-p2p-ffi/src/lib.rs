@@ -352,6 +352,13 @@ impl P2pNode {
         );
     }
 
+    /// Starts sending a network report (network type, home relay, direct and relayed connections)
+    /// every 30 minutes to the relay node of the home relay; a later call replaces the previous
+    /// one. (Async for the same reason as [`Self::serve_ping`].)
+    pub async fn start_telemetry(&self, app_version: String) {
+        self.endpoint.start_telemetry(app_version);
+    }
+
     /// Pings the hex-encoded `endpoint_id`, whose address comes from the registry.
     pub async fn ping(&self, endpoint_id: String) -> Result<PingResult, P2pError> {
         let id = parse_endpoint_id(&endpoint_id)?;

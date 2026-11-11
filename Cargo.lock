@@ -35,7 +35,6 @@ dependencies = [
 [[package]]
 name = "acurast-p2p-proto"
 version = "0.27.2"
-source = "git+https://gitlab.papers.tech/papers/acurast/acurast-substrate.git?rev=d083489b4e4b5a26db533eb169efaf3f43eec195#d083489b4e4b5a26db533eb169efaf3f43eec195"
 dependencies = [
  "blake2",
  "postcard",
@@ -45,7 +44,6 @@ dependencies = [
 [[package]]
 name = "acurast-p2p-registry"
 version = "0.27.2"
-source = "git+https://gitlab.papers.tech/papers/acurast/acurast-substrate.git?rev=d083489b4e4b5a26db533eb169efaf3f43eec195#d083489b4e4b5a26db533eb169efaf3f43eec195"
 dependencies = [
  "acurast-p2p-proto",
  "iroh",

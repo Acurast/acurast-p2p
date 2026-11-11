@@ -11,7 +11,7 @@ use acurast_p2p_proto::{ERR_LIMIT, ERR_PROTOCOL};
 use iroh::{Endpoint, endpoint::Connection};
 use tokio::{sync::Semaphore, task::JoinHandle};
 
-use crate::P2pEndpoint;
+use crate::{P2pEndpoint, registry::SharedRelays, telemetry::ConnectionCounter};
 
 /// Connections handled at the same time, over all services; further ones are refused with
 /// [`ERR_LIMIT`].
@@ -57,20 +57,30 @@ impl P2pEndpoint {
             *acceptor = Some(tokio::spawn(accept(
                 self.inner().clone(),
                 services.handlers.clone(),
+                self.shared_relays(),
+                self.connection_counter(),
             )));
         }
     }
 }
 
-async fn accept(endpoint: Endpoint, handlers: Handlers) {
+async fn accept(
+    endpoint: Endpoint,
+    handlers: Handlers,
+    relays: SharedRelays,
+    counter: Arc<ConnectionCounter>,
+) {
     let limit = Arc::new(Semaphore::new(MAX_CONCURRENT_CONNECTIONS));
     while let Some(incoming) = endpoint.accept().await {
         let handlers = handlers.clone();
         let limit = limit.clone();
+        let relays = relays.clone();
+        let counter = counter.clone();
         tokio::spawn(async move {
             let Ok(conn) = incoming.await else {
                 return;
             };
+            counter.track(&relays, conn.clone());
             let handler = handlers
                 .lock()
                 .expect("handler lock poisoned")

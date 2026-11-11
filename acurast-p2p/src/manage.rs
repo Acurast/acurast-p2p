@@ -177,7 +177,7 @@ fn bounded(status: ProcessorStatus) -> ProcessorStatus {
     }
 }
 
-fn truncate(mut text: String) -> String {
+pub(crate) fn truncate(mut text: String) -> String {
     if text.len() > MAX_STATUS_TEXT_LEN {
         let end = (0..=MAX_STATUS_TEXT_LEN)
             .rev()

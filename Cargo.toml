@@ -12,7 +12,7 @@ edition = "2024"
 acurast-p2p = { path = "acurast-p2p" }
 # Protocol definitions shared with the chain and the relays. Pinned to the commit with the P2P
 # pallet until it is merged into develop.
-acurast-p2p-proto = { git = "https://gitlab.papers.tech/papers/acurast/acurast-substrate.git", rev = "d083489b4e4b5a26db533eb169efaf3f43eec195" }
+acurast-p2p-proto = { path = "../acurast-substrate/p2p/proto" }
 async-trait = "0.1"
 parity-scale-codec = { version = "3", features = ["derive"] }
 iroh = "=1.2.0"
