@@ -145,7 +145,8 @@ async fn run(
     }
 }
 
-/// Sends the report; the connection counts are kept for the next report if it does not arrive.
+/// Sends the report; the connection counts are kept for the next report unless the relay node
+/// accepted it.
 async fn send(
     endpoint: &Endpoint,
     relays: &SharedRelays,
@@ -154,10 +155,16 @@ async fn send(
 ) -> Result<TelemetryReply, Error> {
     let counts = counter.take();
     let reply = exchange(endpoint, relays, report(endpoint, counts, app_version)).await;
-    if reply.is_err() {
+    if !is_accepted(&reply) {
         counter.record(counts);
     }
     reply
+}
+
+/// Whether the relay node stored the report. It refuses one that comes too soon after the previous
+/// one, e.g. after an app restart.
+fn is_accepted(reply: &Result<TelemetryReply, Error>) -> bool {
+    matches!(reply, Ok(TelemetryReply::Ok))
 }
 
 fn report(endpoint: &Endpoint, counts: ConnectionCounts, app_version: &str) -> TelemetryReport {
@@ -284,6 +291,18 @@ mod tests {
     }
 
     #[test]
+    fn only_an_accepted_report_uses_up_the_counts() {
+        assert!(is_accepted(&Ok(TelemetryReply::Ok)));
+        assert!(!is_accepted(&Ok(TelemetryReply::Err(
+            TelemetryError::TooOften
+        ))));
+        assert!(!is_accepted(&Ok(TelemetryReply::Err(
+            TelemetryError::Forbidden
+        ))));
+        assert!(!is_accepted(&Err(Error::Telemetry("no home relay".into()))));
+    }
+
+    #[test]
     fn no_average_without_direct_connections() {
         let counts = ConnectionCounts {
             relayed: 3,
@@ -293,7 +312,7 @@ mod tests {
     }
 
     #[test]
-    fn counts_of_a_failed_report_are_kept() {
+    fn counts_of_a_refused_report_are_kept() {
         let counter = ConnectionCounter::default();
         let counts = ConnectionCounts {
             direct: 2,
@@ -306,7 +325,7 @@ mod tests {
             relayed: 1,
             ..Default::default()
         });
-        // What `send` does when the report did not arrive.
+        // What `send` does when the report was not accepted.
         counter.record(taken);
         assert_eq!(
             counter.take(),
