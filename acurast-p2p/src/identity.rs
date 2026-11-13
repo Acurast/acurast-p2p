@@ -26,6 +26,25 @@ pub(crate) fn load_or_create_key(store: &dyn KeyStore) -> Result<SecretKey, Erro
     Ok(key)
 }
 
+/// Loads the iroh key like [`load_or_create_key`], but replaces it with a new one when another
+/// account registered it. The key can outlive the processor account (the iOS Keychain keeps it
+/// when the app is paired again and gets a new account), while an endpoint belongs to the account
+/// that registered it: the new account could never register the old key.
+pub(crate) async fn load_key_for_account(
+    store: &dyn KeyStore,
+    chain: &dyn Chain,
+) -> Result<SecretKey, Error> {
+    let key = load_or_create_key(store)?;
+    match crate::chain::endpoint_owner(chain, key.public().as_bytes()).await? {
+        Some(owner) if owner != chain.account() => {
+            let key = SecretKey::generate();
+            store.store_seed(key.to_bytes().to_vec())?;
+            Ok(key)
+        }
+        _ => Ok(key),
+    }
+}
+
 /// Whether [`ensure_registered`] had to register the key.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Registration {
