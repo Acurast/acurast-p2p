@@ -26,6 +26,8 @@ dependencies = [
  "acurast-p2p",
  "async-trait",
  "hex",
+ "jni-sys 0.3.1",
+ "ndk-context",
  "parity-scale-codec",
  "thiserror 2.0.21",
  "tokio",

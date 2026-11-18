@@ -11,6 +11,9 @@ use acurast_p2p::{
     RoleCache, platform,
 };
 
+#[cfg(target_os = "android")]
+mod android;
+
 uniffi::setup_scaffolding!();
 
 /// Version of this library, so the app can log which one it runs.

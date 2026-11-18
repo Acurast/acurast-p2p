@@ -8,16 +8,29 @@
 //! ```text
 //! cargo run -p acurast-p2p --example p2p-manage -- proof <manager-account-hex> <genesis-hash-hex> [--secret <hex>]
 //! cargo run -p acurast-p2p --example p2p-manage -- send <relays> <processor-endpoint-id> status|reboot|restart-app [--force] --secret <hex>
+//! cargo run -p acurast-p2p --example p2p-manage -- notice <relays> <processor-endpoint-id> --secret <hex>
 //! ```
+//!
+//! `notice` sends a fake assignment notice, as only relay nodes may: a processor must refuse it
+//! when the key is not a relay node's.
 
 use std::time::Duration;
 
-use acurast_p2p::{EndpointId, ManageCommand, P2pEndpoint, Relay, SecretKey};
-use acurast_p2p_proto::hash::register_proof_message;
+use acurast_p2p::{
+    ALPN_ASSIGNMENTS, AssignmentNotice, EndpointAddr, EndpointId, ManageCommand, P2pEndpoint,
+    Relay, SecretKey,
+};
+use acurast_p2p_proto::{
+    MAX_FRAME,
+    frame::{self, HEADER_LEN},
+    hash::register_proof_message,
+    messages::AssignmentNoticeReply,
+};
 
 const TIMEOUT: Duration = Duration::from_secs(30);
 const USAGE: &str = "usage: p2p-manage proof <manager-account-hex> <genesis-hash-hex> [--secret <hex>]\n       \
-                     p2p-manage send <relays> <processor-endpoint-id> status|reboot|restart-app [--force] --secret <hex>";
+                     p2p-manage send <relays> <processor-endpoint-id> status|reboot|restart-app [--force] --secret <hex>\n       \
+                     p2p-manage notice <relays> <processor-endpoint-id> --secret <hex>";
 
 #[tokio::main]
 async fn main() -> Result<(), String> {
@@ -29,6 +42,7 @@ async fn main() -> Result<(), String> {
     match args.first().map(String::as_str) {
         Some("proof") => proof(&args, secret.unwrap_or_else(SecretKey::generate)),
         Some("send") => send(&args, secret.ok_or(USAGE)?).await,
+        Some("notice") => notice(&args, secret.ok_or(USAGE)?).await,
         _ => Err(USAGE.into()),
     }
 }
@@ -76,6 +90,61 @@ async fn send(args: &[String], secret: SecretKey) -> Result<(), String> {
         .map_err(|_| "no reply in time")?
         .map_err(|e| e.to_string())?;
     println!("reply:       {reply:?}");
+    endpoint.close().await;
+    Ok(())
+}
+
+/// Sends a fake assignment notice to the processor and prints what happened.
+async fn notice(args: &[String], secret: SecretKey) -> Result<(), String> {
+    let [_, relays, processor, ..] = args else {
+        return Err(USAGE.into());
+    };
+    let processor = EndpointId::from_bytes(&bytes32(processor, "processor endpoint id")?)
+        .map_err(|e| e.to_string())?;
+
+    println!("endpoint id: {}", hex::encode(secret.public().as_bytes()));
+    let endpoint = P2pEndpoint::bind(secret, parse_relays(relays)?, Vec::new())
+        .await
+        .map_err(|e| e.to_string())?;
+    tokio::time::timeout(TIMEOUT, endpoint.online())
+        .await
+        .map_err(|_| "the relays did not admit this endpoint (is it registered?)")?;
+
+    let notice = AssignmentNotice {
+        block: 1,
+        jobs: vec![vec![0; 8]],
+    };
+    let result = tokio::time::timeout(TIMEOUT, async {
+        let conn = endpoint
+            .connect(EndpointAddr::new(processor), ALPN_ASSIGNMENTS)
+            .await
+            .map_err(|e| format!("connect: {e}"))?;
+        let (mut send, mut recv) = conn.open_bi().await.map_err(|e| format!("open: {e}"))?;
+        let bytes = frame::encode(&notice).map_err(|e| e.to_string())?;
+        send.write_all(&bytes)
+            .await
+            .map_err(|e| format!("write: {e}"))?;
+        send.finish().map_err(|e| format!("finish: {e}"))?;
+        let bytes = recv
+            .read_to_end(HEADER_LEN + MAX_FRAME)
+            .await
+            .map_err(|e| {
+                format!(
+                    "read: {e}; closed by the processor: {:?}",
+                    conn.close_reason()
+                )
+            })?;
+        conn.close(0u32.into(), b"done");
+        frame::decode::<AssignmentNoticeReply>(&bytes)
+            .map(|(reply, _)| reply)
+            .map_err(|e| format!("decode: {e}"))
+    })
+    .await
+    .map_err(|_| "no answer in time".to_string())?;
+    match result {
+        Ok(reply) => println!("accepted?    the processor replied {reply:?}"),
+        Err(e) => println!("refused:     {e}"),
+    }
     endpoint.close().await;
     Ok(())
 }

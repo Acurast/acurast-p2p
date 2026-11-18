@@ -17,6 +17,10 @@ hex = "0.4"
 thiserror = { workspace = true }
 uniffi = { workspace = true, features = ["tokio"] }
 
+[target.'cfg(target_os = "android")'.dependencies]
+jni-sys = "0.3"
+ndk-context = "0.1"
+
 [dev-dependencies]
 parity-scale-codec = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
