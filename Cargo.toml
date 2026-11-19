@@ -1,5 +1,5 @@
 [workspace]
-members = ["acurast-p2p", "acurast-p2p-ffi"]
+members = ["acurast-p2p", "acurast-p2p-cli", "acurast-p2p-ffi"]
 resolver = "2"
 
 [workspace.package]
