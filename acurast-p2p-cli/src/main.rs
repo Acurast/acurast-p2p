@@ -3,17 +3,19 @@
 //! The manager talks to its processors over the P2P layer with its own P2P key, kept in a file.
 //! Processors accept commands only from a key that their manager registered on chain:
 //! `init` creates the key, `register` prepares that registration for the manager to sign in its
-//! wallet. The tool never sees the manager's account key.
+//! wallet. The tool never sees the manager's account key. `processors` lists the manager's
+//! processors; `status`, `reboot` and `restart-app` send them commands.
 
 mod account;
 mod chain;
 mod key;
+mod manage;
 
-use std::{path::PathBuf, process::ExitCode};
+use std::{io::Write, path::PathBuf, process::ExitCode};
 
-use acurast_p2p::SecretKey;
+use acurast_p2p::{ManageCommand, SecretKey};
 use acurast_p2p_proto::hash::register_proof_message;
-use clap::{Parser, Subcommand};
+use clap::{Args, Parser, Subcommand};
 
 #[derive(Parser)]
 #[command(
@@ -38,19 +40,70 @@ enum Command {
         force: bool,
     },
     /// Prepare the on-chain registration of the P2P key, to sign with the manager's account.
-    Register {
-        /// The manager's account (SS58 address or 0x hex).
-        #[arg(long)]
-        manager: String,
-        /// RPC URL of a node of the network, e.g. wss://public-rpc.canary.acurast.com.
-        #[arg(long, env = "ACURAST_RPC")]
-        rpc: String,
-    },
+    Register(Manager),
+    /// List the manager's processors and their P2P endpoints.
+    Processors(Manager),
+    /// Ask processors for their state: app version, OS, battery, busy, uptime.
+    Status(Targets),
+    /// Restart the device of processors (Android with device owner rights only).
+    Reboot(Disruptive),
+    /// Restart the processor app.
+    RestartApp(Disruptive),
+}
+
+/// The processors a command goes to.
+#[derive(Args)]
+struct Targets {
+    /// A processor of the manager (SS58 address or 0x hex).
+    #[arg(required_unless_present = "all", conflicts_with = "all")]
+    processor: Option<String>,
+    /// All processors of the manager.
+    #[arg(long)]
+    all: bool,
+    #[command(flatten)]
+    manager: Manager,
+}
+
+/// A command that interrupts the processors.
+#[derive(Args)]
+struct Disruptive {
+    #[command(flatten)]
+    targets: Targets,
+    /// Run it even while a job is running on the processor.
+    #[arg(long)]
+    force: bool,
+    /// Do not ask for confirmation with --all.
+    #[arg(long, short)]
+    yes: bool,
+}
+
+/// The manager and the network it is on.
+#[derive(Args)]
+struct Manager {
+    /// The manager's account (SS58 address or 0x hex).
+    #[arg(long, env = "ACURAST_MANAGER")]
+    manager: String,
+    /// RPC URL of a node of the network, e.g. wss://public-rpc.canary.acurast.com.
+    #[arg(long, env = "ACURAST_RPC")]
+    rpc: String,
+}
+
+impl Manager {
+    fn connect(&self) -> Result<([u8; 32], chain::Rpc), String> {
+        Ok((account::parse(&self.manager)?, chain::Rpc::new(&self.rpc)))
+    }
 }
 
 #[tokio::main]
 async fn main() -> ExitCode {
     let cli = Cli::parse();
+    // Logs of the P2P library only with RUST_LOG (e.g. RUST_LOG=debug), on stderr.
+    if std::env::var_os("RUST_LOG").is_some() {
+        tracing_subscriber::fmt()
+            .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
+            .with_writer(std::io::stderr)
+            .init();
+    }
     match run(cli).await {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
@@ -76,10 +129,25 @@ async fn run(cli: Cli) -> Result<(), String> {
             );
             Ok(())
         }
-        Command::Register { manager, rpc } => {
+        Command::Register(args) => {
             let key = key::load(&key_path)?;
-            let manager = account::parse(&manager)?;
-            let node = chain::Rpc::new(&rpc);
+            let (manager, node) = args.connect()?;
+            let id = *key.public().as_bytes();
+            match node.endpoint_owner(&id).await {
+                Ok(Some(owner)) if owner == manager => {
+                    println!("Endpoint id: {}", endpoint_id(&key));
+                    println!("Already registered for this manager: nothing to do.");
+                    return Ok(());
+                }
+                Ok(Some(owner)) => {
+                    return Err(format!(
+                        "this key is registered by another account ({}): create a new one with `acurast-p2p init --force`",
+                        account::to_ss58(&owner)
+                    ));
+                }
+                // Not registered, or a network without the P2P layer: the metadata check says so.
+                Ok(None) | Err(_) => {}
+            }
             let genesis = node.genesis_hash().await?;
             let index =
                 chain::call_index(&node.metadata().await?, "AcurastP2p", "register_endpoint")?;
@@ -93,12 +161,124 @@ async fn run(cli: Cli) -> Result<(), String> {
             println!(
                 "In polkadot.js apps: Developer > Extrinsics > Decode, paste the call, then Submit."
             );
-            if let Some(link) = polkadot_js_link(&rpc, &call) {
+            if let Some(link) = polkadot_js_link(&args.rpc, &call) {
                 println!("Or open: {link}");
             }
             Ok(())
         }
+        Command::Processors(args) => {
+            let (manager, node) = args.connect()?;
+            let processors = processors(&node, &manager).await?;
+            if processors.is_empty() {
+                println!("No processors paired with this manager.");
+                return Ok(());
+            }
+            println!("{:<50} P2P ENDPOINT", "PROCESSOR");
+            for p in &processors {
+                let endpoint = match p.endpoint {
+                    Some(id) => format!("0x{}", hex::encode(id)),
+                    None => "none (app without P2P, or not started yet)".into(),
+                };
+                println!("{:<50} {endpoint}", account::to_ss58(&p.account));
+            }
+            Ok(())
+        }
+        Command::Status(targets) => {
+            send_command(&key_path, &targets, ManageCommand::Status, None).await
+        }
+        Command::Reboot(args) => {
+            let command = ManageCommand::Reboot { force: args.force };
+            let confirm = (!args.yes).then_some("Reboot");
+            send_command(&key_path, &args.targets, command, confirm).await
+        }
+        Command::RestartApp(args) => {
+            let command = ManageCommand::RestartApp { force: args.force };
+            let confirm = (!args.yes).then_some("Restart the app on");
+            send_command(&key_path, &args.targets, command, confirm).await
+        }
     }
+}
+
+/// Sends `command` to the processors of `targets` and prints a line per processor. Commands that
+/// interrupt the processors ask for confirmation first when they go to all of them.
+async fn send_command(
+    key_path: &std::path::Path,
+    targets: &Targets,
+    command: ManageCommand,
+    confirm: Option<&str>,
+) -> Result<(), String> {
+    let key = key::load(key_path)?;
+    let (manager, node) = targets.manager.connect()?;
+    let list: Vec<manage::Target> = match &targets.processor {
+        Some(processor) => {
+            let account = account::parse(processor)?;
+            let endpoint = node.endpoints(&account).await?.first().copied();
+            vec![manage::Target { account, endpoint }]
+        }
+        None => processors(&node, &manager)
+            .await?
+            .into_iter()
+            .map(|p| manage::Target {
+                account: p.account,
+                endpoint: p.endpoint,
+            })
+            .collect(),
+    };
+    if list.is_empty() {
+        println!("No processors paired with this manager.");
+        return Ok(());
+    }
+    if let Some(action) = confirm
+        && targets.all
+        && !ask(&format!("{action} {} processors?", list.len()))?
+    {
+        return Err("cancelled".into());
+    }
+    let chain = chain::ManagerChain {
+        rpc: node,
+        account: manager,
+    };
+    let outcomes = manage::send(key, &chain, &list, command).await?;
+    println!("{:<50} RESULT", "PROCESSOR");
+    for (target, outcome) in list.iter().zip(&outcomes) {
+        println!(
+            "{:<50} {}",
+            account::to_ss58(&target.account),
+            manage::describe(outcome)
+        );
+    }
+    Ok(())
+}
+
+/// Asks `question` on the terminal; only "y" or "yes" confirms.
+fn ask(question: &str) -> Result<bool, String> {
+    print!("{question} [y/N] ");
+    std::io::stdout().flush().map_err(|e| e.to_string())?;
+    let mut answer = String::new();
+    std::io::stdin()
+        .read_line(&mut answer)
+        .map_err(|e| e.to_string())?;
+    Ok(matches!(answer.trim().to_lowercase().as_str(), "y" | "yes"))
+}
+
+/// A processor of the manager, with its P2P endpoint if it registered one.
+struct Processor {
+    account: [u8; 32],
+    endpoint: Option<[u8; 32]>,
+}
+
+async fn processors(node: &chain::Rpc, manager: &[u8; 32]) -> Result<Vec<Processor>, String> {
+    let id = node
+        .manager_id(manager)
+        .await?
+        .ok_or("this account is not a manager on this network")?;
+    let mut processors = Vec::new();
+    for account in node.managed_processors(id).await? {
+        // A processor has a single endpoint.
+        let endpoint = node.endpoints(&account).await?.first().copied();
+        processors.push(Processor { account, endpoint });
+    }
+    Ok(processors)
 }
 
 fn endpoint_id(key: &SecretKey) -> String {

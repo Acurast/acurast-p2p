@@ -13,6 +13,18 @@ pub fn parse(input: &str) -> Result<[u8; 32], String> {
     ss58_decode(input).ok_or_else(|| format!("invalid account {input}: not an SS58 address"))
 }
 
+/// SS58 address of `account` with the generic Substrate prefix 42, as Acurast uses.
+pub fn to_ss58(account: &[u8; 32]) -> String {
+    let mut data = vec![42u8];
+    data.extend_from_slice(account);
+    let hash = Blake2b512::new()
+        .chain_update(b"SS58PRE")
+        .chain_update(&data)
+        .finalize();
+    data.extend_from_slice(&hash[..2]);
+    bs58::encode(data).into_string()
+}
+
 fn ss58_decode(address: &str) -> Option<[u8; 32]> {
     let data = bs58::decode(address).into_vec().ok()?;
     let prefix_len = match data.first()? {
@@ -52,6 +64,11 @@ mod tests {
         let mut broken = ALICE_SS58.to_owned();
         broken.replace_range(10..11, if &broken[10..11] == "a" { "b" } else { "a" });
         assert!(parse(&broken).is_err());
+    }
+
+    #[test]
+    fn encodes_back_to_the_same_address() {
+        assert_eq!(to_ss58(&parse(ALICE_HEX).unwrap()), ALICE_SS58);
     }
 
     #[test]
