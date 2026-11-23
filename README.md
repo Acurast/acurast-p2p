@@ -10,6 +10,7 @@ callbacks, so the library underneath can change without renaming anything.
 | crate | what |
 |---|---|
 | `acurast-p2p` | The logic: iroh endpoint with the Acurast relays, endpoint registration on chain, address publishing and lookup through the relay nodes' registry, role cache. Plain Rust, tested on the host. |
+| `acurast-p2p-cli` | `acurast-p2p` command for managers: register a P2P key, list processors, send them commands. |
 | `acurast-p2p-ffi` | [uniffi](https://mozilla.github.io/uniffi-rs/) bindings for Kotlin (Android AAR) and Swift (iOS xcframework). |
 
 Platform-specific work (storing the iroh key, chain RPC, signing extrinsics with the processor
@@ -39,6 +40,36 @@ cargo run -p acurast-p2p-ffi --features uniffi/cli --bin uniffi-bindgen -- \
 
 `libc` is pinned to 0.2.186 in `Cargo.lock`: later versions no longer define `in6_ifreq` on iOS,
 which `netdev` (via iroh) needs. The iOS minimum is 13.0, as for `AcurastSDK`.
+
+## Manage processors from the command line
+
+Managers send commands to their own processors over the P2P layer with `acurast-p2p`. It uses its
+own P2P key, stored in `~/.config/acurast-p2p/manager.key` (or `--key`), and never the manager's
+account key: the one on-chain step, registering the P2P key, is signed in the manager's wallet.
+
+```sh
+cargo install --path acurast-p2p-cli
+export ACURAST_RPC=wss://<node of the network>
+export ACURAST_MANAGER=<manager address>
+
+acurast-p2p init        # create the P2P key (once)
+acurast-p2p register    # prints the call (and a polkadot.js link) to sign with the manager's account
+acurast-p2p processors  # the manager's processors and their P2P endpoints
+acurast-p2p status <processor> | --all
+acurast-p2p reboot <processor> | --all [--force]
+acurast-p2p restart-app <processor> | --all [--force]
+```
+
+`register` reads the genesis hash and the call index from the chain, and says when the key is
+already registered. In polkadot.js apps the call goes to Developer > Extrinsics > Decode, then
+Submit. Registering costs the transaction fee, plus the endpoint deposit if the network sets one;
+a manager can register more than one key (one per computer).
+
+Processors refuse commands from any other key (`Forbidden`), commands older than a minute
+(`Stale`, so the computer's clock must be right) and, without `--force`, `reboot` and
+`restart-app` while a job runs (`Busy`). `reboot` needs device owner rights on Android and is not
+supported on iOS. A processor that is offline, asleep or with the app in the background on iOS
+does not reply. `reboot` and `restart-app` with `--all` ask for confirmation (`-y` skips it).
 
 ## Try it against a relay
 

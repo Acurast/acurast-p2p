@@ -1,0 +1,6 @@
+# Name of the C module of the Swift bindings. Xcode puts the xcframework headers in a folder named
+# after the xcframework (AcurastP2PFFI) and finds the module only if it has the same name. The file
+# name stays the default one, which cargo-swift expects.
+[bindings.swift]
+ffi_module_name = "AcurastP2PFFI"
+ffi_module_filename = "acurast_p2p_ffiFFI"

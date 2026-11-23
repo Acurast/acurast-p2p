@@ -13,6 +13,7 @@ use crate::{
     registry::{RegistryLookup, RegistryWorker, SharedRelays},
     relays::Relay,
     services::Services,
+    telemetry::{ConnectionCounter, TelemetryTask},
 };
 
 /// iroh endpoint of a processor (or any other registered peer).
@@ -27,6 +28,8 @@ pub struct P2pEndpoint {
     registry_worker: JoinHandle<()>,
     alpns: Mutex<Vec<Vec<u8>>>,
     services: Services,
+    connections: Arc<ConnectionCounter>,
+    telemetry: TelemetryTask,
 }
 
 impl P2pEndpoint {
@@ -55,6 +58,8 @@ impl P2pEndpoint {
             registry_worker,
             alpns: Mutex::new(alpns),
             services: Services::default(),
+            connections: Arc::default(),
+            telemetry: TelemetryTask::default(),
         })
     }
 
@@ -108,6 +113,26 @@ impl P2pEndpoint {
         &self.services
     }
 
+    /// The relays in use, shared with the tasks that need them.
+    pub(crate) fn shared_relays(&self) -> SharedRelays {
+        self.relays.clone()
+    }
+
+    /// Counts the connections by path for the network reports.
+    pub(crate) fn connection_counter(&self) -> Arc<ConnectionCounter> {
+        self.connections.clone()
+    }
+
+    /// Counts `conn` in the network reports once its path is known.
+    pub(crate) fn track(&self, conn: &Connection) {
+        self.connections.track(&self.relays, conn.clone());
+    }
+
+    /// Replaces the task sending the network reports, returning the previous one.
+    pub(crate) fn replace_telemetry(&self, task: JoinHandle<()>) -> Option<JoinHandle<()>> {
+        self.telemetry.replace(task)
+    }
+
     /// Accepts the protocol `alpn` on new incoming connections, in addition to the others.
     pub(crate) fn add_alpn(&self, alpn: &[u8]) {
         let mut alpns = self.alpns.lock().expect("ALPN list lock poisoned");
@@ -131,13 +156,19 @@ impl P2pEndpoint {
         addr: impl Into<EndpointAddr>,
         alpn: &[u8],
     ) -> Result<Connection, Error> {
-        Ok(self.endpoint.connect(addr, alpn).await?)
+        let conn = self.endpoint.connect(addr, alpn).await?;
+        self.track(&conn);
+        Ok(conn)
     }
 
     /// Waits for the next incoming connection; `None` once the endpoint is closed.
     pub async fn accept(&self) -> Option<Result<Connection, Error>> {
         let incoming = self.endpoint.accept().await?;
-        Some(incoming.await.map_err(Error::from))
+        let conn = incoming.await.map_err(Error::from);
+        if let Ok(conn) = &conn {
+            self.track(conn);
+        }
+        Some(conn)
     }
 
     /// The underlying iroh endpoint.
@@ -149,13 +180,16 @@ impl P2pEndpoint {
     pub async fn close(&self) {
         self.registry_worker.abort();
         self.services.stop();
+        self.telemetry.stop();
         self.endpoint.close().await
     }
 }
 
 impl Drop for P2pEndpoint {
     fn drop(&mut self) {
-        // The worker holds a handle to the endpoint, which would otherwise outlive this.
+        // The worker and the telemetry task hold a handle to the endpoint, which would otherwise
+        // outlive this.
         self.registry_worker.abort();
+        self.telemetry.stop();
     }
 }

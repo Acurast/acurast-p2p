@@ -11,6 +11,9 @@ use acurast_p2p::{
     RoleCache, platform,
 };
 
+#[cfg(target_os = "android")]
+mod android;
+
 uniffi::setup_scaffolding!();
 
 /// Version of this library, so the app can log which one it runs.
@@ -350,6 +353,13 @@ impl P2pNode {
             self.platform.clone(),
             Arc::new(ManageBridge(handler)),
         );
+    }
+
+    /// Starts sending a network report (network type, home relay, direct and relayed connections)
+    /// every 30 minutes to the relay node of the home relay; a later call replaces the previous
+    /// one. (Async for the same reason as [`Self::serve_ping`].)
+    pub async fn start_telemetry(&self, app_version: String) {
+        self.endpoint.start_telemetry(app_version);
     }
 
     /// Pings the hex-encoded `endpoint_id`, whose address comes from the registry.

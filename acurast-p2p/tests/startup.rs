@@ -11,6 +11,7 @@ use iroh::{PublicKey, Signature};
 use parity_scale_codec::Encode;
 
 const ACCOUNT: [u8; 32] = [5; 32];
+const OTHER_ACCOUNT: [u8; 32] = [6; 32];
 const GENESIS: [u8; 32] = [9; 32];
 
 /// A valid relay node id: relay ids are Ed25519 public keys.
@@ -36,6 +37,8 @@ impl KeyStore for MemoryKeyStore {
 #[derive(Default)]
 struct MockChain {
     endpoints: Mutex<Vec<[u8; 32]>>,
+    /// Endpoints registered by other accounts.
+    foreign: Mutex<Vec<[u8; 32]>>,
     relay_urls: Mutex<Vec<&'static str>>,
     registrations: Mutex<usize>,
     fail_registration: bool,
@@ -76,6 +79,17 @@ impl Chain for MockChain {
                 assert_eq!(args, ACCOUNT.encode());
                 self.include_pending();
                 Ok(self.endpoints.lock().unwrap().encode())
+            }
+            "P2pApi_endpoint_owner" => {
+                let id: [u8; 32] = args.try_into().unwrap();
+                let owner = if self.endpoints.lock().unwrap().contains(&id) {
+                    Some(ACCOUNT)
+                } else if self.foreign.lock().unwrap().contains(&id) {
+                    Some(OTHER_ACCOUNT)
+                } else {
+                    None
+                };
+                Ok(owner.encode())
             }
             "P2pApi_relay_nodes" => {
                 // (id, RelayNode { url, quic_port, country, operator })
@@ -173,6 +187,32 @@ async fn new_key_replaces_the_registered_one() {
     assert_eq!(
         *chain.endpoints.lock().unwrap(),
         vec![*endpoint.id().as_bytes()]
+    );
+    endpoint.close().await;
+}
+
+#[tokio::test]
+async fn key_registered_by_another_account_is_replaced() {
+    // E.g. on iOS after a new pairing: the Keychain keeps the key of the previous processor
+    // account, which still owns its endpoint on chain.
+    let old = SecretKey::from_bytes(&[4; 32]);
+    let store = MemoryKeyStore(Mutex::new(Some(old.to_bytes().to_vec())));
+    let chain = MockChain::default();
+    chain.foreign.lock().unwrap().push(*old.public().as_bytes());
+
+    let (endpoint, registration) = acurast_p2p::start(&store, &chain, vec![]).await.unwrap();
+
+    assert_eq!(registration, Registration::Registered);
+    assert_ne!(endpoint.id(), old.public());
+    assert_eq!(
+        *chain.endpoints.lock().unwrap(),
+        vec![*endpoint.id().as_bytes()]
+    );
+    let seed: [u8; 32] = store.0.lock().unwrap().clone().unwrap().try_into().unwrap();
+    assert_eq!(
+        SecretKey::from_bytes(&seed).public(),
+        endpoint.id(),
+        "the new key is stored"
     );
     endpoint.close().await;
 }

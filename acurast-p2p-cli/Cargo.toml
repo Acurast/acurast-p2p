@@ -1,0 +1,34 @@
+[package]
+name = "acurast-p2p-cli"
+description = "Command line tool for managers: send commands to their processors over the Acurast P2P layer"
+authors = { workspace = true }
+repository = { workspace = true }
+version = { workspace = true }
+edition = { workspace = true }
+
+[[bin]]
+name = "acurast-p2p"
+path = "src/main.rs"
+
+[dependencies]
+acurast-p2p = { workspace = true }
+acurast-p2p-proto = { workspace = true }
+async-trait = { workspace = true }
+blake2 = "0.10"
+bs58 = "0.5"
+clap = { version = "4", features = ["derive", "env"] }
+frame-metadata = { version = "23", default-features = false, features = ["current", "decode", "std"] }
+hex = "0.4"
+parity-scale-codec = { workspace = true }
+reqwest = { version = "0.13", default-features = false, features = ["json", "rustls-no-provider"] }
+# TLS with ring, the provider iroh already uses: no second crypto library in the build.
+rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
+scale-info = { version = "2", default-features = false, features = ["std"] }
+serde_json = "1"
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+tracing-subscriber = { version = "0.3", default-features = false, features = ["env-filter", "fmt", "ansi"] }
+twox-hash = { version = "2", default-features = false, features = ["xxhash64"] }
+
+[dev-dependencies]
+iroh = { workspace = true }
+tempfile = "3"

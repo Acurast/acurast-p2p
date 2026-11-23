@@ -40,6 +40,16 @@ impl ChainClient for MockChain {
     async fn state_call(&self, method: String, args: Vec<u8>) -> Result<Vec<u8>, P2pError> {
         Ok(match method.as_str() {
             "P2pApi_endpoints" => self.endpoints.lock().unwrap().encode(),
+            // Only this account registers endpoints here.
+            "P2pApi_endpoint_owner" => {
+                let registered = self
+                    .endpoints
+                    .lock()
+                    .unwrap()
+                    .iter()
+                    .any(|id| id[..] == args[..]);
+                registered.then_some([5u8; 32]).encode()
+            }
             "P2pApi_relay_nodes" => {
                 let node = (
                     b"https://relay.example.com".to_vec(),
